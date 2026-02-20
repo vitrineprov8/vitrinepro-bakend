@@ -37,7 +37,11 @@ export class UsersService {
     oauthId?: string | null;
     avatarUrl?: string | null;
   }): Promise<User> {
-    const user = this.usersRepository.create(userData);
+    const username = await this.generateUniqueUsername(
+      userData.firstName,
+      userData.lastName,
+    );
+    const user = this.usersRepository.create({ ...userData, username });
     return this.usersRepository.save(user);
   }
 
@@ -52,5 +56,25 @@ export class UsersService {
 
   async delete(id: string): Promise<void> {
     await this.usersRepository.delete(id);
+  }
+
+  private async generateUniqueUsername(
+    firstName: string,
+    lastName: string,
+  ): Promise<string> {
+    const base = `${firstName}${lastName}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+    let username: string;
+    let exists: User | null;
+
+    do {
+      const suffix = Math.floor(1000 + Math.random() * 9000).toString();
+      username = `${base}${suffix}`;
+      exists = await this.usersRepository.findOne({ where: { username } });
+    } while (exists);
+
+    return username;
   }
 }
