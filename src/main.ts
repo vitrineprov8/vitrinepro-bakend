@@ -9,7 +9,7 @@ async function bootstrap() {
   // Habilitar CORS para localhost y producción
   const allowedOrigins = [
     'http://localhost:3000',
-    'http://localhost:4200',
+    'http://localhost:4321',
     'https://www.v8pro.com.br',
     'https://v8pro.com.br',
   ];
