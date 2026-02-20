@@ -7,10 +7,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
   // Habilitar CORS para localhost y producción
-  const allowedOrigins = ['http://localhost:4321'];
-  if (process.env.FRONTEND_URL) {
-    allowedOrigins.push(process.env.FRONTEND_URL);
-  }
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:4200',
+    'https://www.v8pro.com.br',
+    'https://v8pro.com.br',
+  ];
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
