@@ -74,7 +74,7 @@ export class StorageService {
         ContentType: mimeType,
       }),
     );
-    return `${this.publicUrl}/${key}`;
+    return `${this.publicUrl}/${key}?v=${Date.now()}`;
   }
 
   async deleteFile(key: string): Promise<void> {
