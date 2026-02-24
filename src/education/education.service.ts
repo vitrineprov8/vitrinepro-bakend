@@ -25,6 +25,18 @@ export class EducationService {
     });
   }
 
+  async findPublicByUser(userId: string): Promise<Partial<Education>[]> {
+    return this.educationRepository.find({
+      where: { userId },
+      order: { order: 'ASC', createdAt: 'ASC' },
+      select: {
+        id: true, type: true, institution: true, title: true,
+        fieldOfStudy: true, startDate: true, endDate: true,
+        description: true, certificateUrl: true, order: true,
+      },
+    });
+  }
+
   async create(userId: string, dto: CreateEducationDto): Promise<Education> {
     const education = this.educationRepository.create({ ...dto, userId });
     return this.educationRepository.save(education);

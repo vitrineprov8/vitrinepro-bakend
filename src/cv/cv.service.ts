@@ -23,6 +23,14 @@ export class CvService {
     });
   }
 
+  async findPublicByUser(userId: string): Promise<Partial<CV>[]> {
+    return this.cvRepository.find({
+      where: { userId, isActive: true },
+      order: { createdAt: 'DESC' },
+      select: { id: true, label: true, fileUrl: true, createdAt: true },
+    });
+  }
+
   async upload(userId: string, label: string, file: Express.Multer.File): Promise<CV> {
     this.storageService.validatePdf(file.buffer, file.mimetype);
     const timestamp = Date.now();

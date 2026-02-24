@@ -55,6 +55,11 @@ export class CvController {
     return this.cvService.delete(id, req.user.id);
   }
 
+  @Get('public/:userId')
+  findPublicByUser(@Param('userId') userId: string) {
+    return this.cvService.findPublicByUser(userId);
+  }
+
   @Get(':id/download')
   getDownloadUrl(@Param('id') id: string) {
     return this.cvService.getDownloadUrl(id);
