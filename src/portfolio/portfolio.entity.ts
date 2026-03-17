@@ -12,22 +12,22 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Tag } from '../tags/tag.entity';
-import { ProjectImage } from './project-image.entity';
+import { PortfolioFile } from './portfolio-file.entity';
 
-export enum ProjectStatus {
+export enum PortfolioStatus {
   DRAFT = 'DRAFT',
   PUBLISHED = 'PUBLISHED',
 }
 
-export enum ProjectWorkStatus {
+export enum PortfolioWorkStatus {
   ONGOING = 'ONGOING',
   COMPLETED = 'COMPLETED',
   PAUSED = 'PAUSED',
   CANCELLED = 'CANCELLED',
 }
 
-@Entity('projects')
-export class Project {
+@Entity('portfolio_items')
+export class PortfolioItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -71,21 +71,21 @@ export class Project {
   @Column({ type: 'varchar', length: 255, nullable: true })
   role: string | null;
 
-  @Column({ type: 'enum', enum: ProjectWorkStatus, default: ProjectWorkStatus.ONGOING })
-  projectStatus: ProjectWorkStatus;
+  @Column({ type: 'enum', enum: PortfolioWorkStatus, nullable: true })
+  projectStatus: PortfolioWorkStatus | null;
 
-  @Column({ type: 'enum', enum: ProjectStatus, default: ProjectStatus.DRAFT })
-  status: ProjectStatus;
+  @Column({ type: 'enum', enum: PortfolioStatus, default: PortfolioStatus.DRAFT })
+  status: PortfolioStatus;
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   externalUrl: string | null;
 
   @ManyToMany(() => Tag, { cascade: true, eager: false })
-  @JoinTable({ name: 'project_tags' })
+  @JoinTable({ name: 'portfolio_tags' })
   tags: Tag[];
 
-  @OneToMany(() => ProjectImage, (image) => image.project, { cascade: true })
-  images: ProjectImage[];
+  @OneToMany(() => PortfolioFile, (file) => file.portfolioItem, { cascade: true })
+  files: PortfolioFile[];
 
   @CreateDateColumn()
   createdAt: Date;

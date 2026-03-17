@@ -7,10 +7,12 @@ import { JwtStrategy } from './jwt.strategy';
 import { GoogleStrategy } from './google.strategy';
 import { LinkedInStrategy } from './linkedin.strategy';
 import { UsersModule } from '../users/users.module';
+import { TagsModule } from '../tags/tags.module';
 
 @Module({
   imports: [
     UsersModule,
+    TagsModule,
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key',

@@ -2,12 +2,14 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
+import { TagsService } from '../tags/tags.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private tagsService: TagsService,
   ) {}
 
   async register(registerDto: {
@@ -31,6 +33,9 @@ export class AuthService {
       password: hashedPassword,
       authProvider: 'local',
     });
+
+    // Criar tags padrão para o novo usuário
+    await this.tagsService.createDefaultTagsForUser(user.id);
 
     // Generar JWT
     const token = this.generateToken(user);
@@ -141,6 +146,9 @@ export class AuthService {
       oauthId: oauthData.oauthId,
       avatarUrl: oauthData.avatarUrl,
     });
+
+    // Criar tags padrão para o novo usuário OAuth
+    await this.tagsService.createDefaultTagsForUser(user.id);
 
     return user;
   }

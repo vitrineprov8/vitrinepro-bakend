@@ -23,10 +23,12 @@ export class ProfileService {
     return user;
   }
 
-  async getPublicProfile(username: string): Promise<User> {
+  async getPublicProfile(username: string): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { username } });
     if (!user) throw new NotFoundException('Perfil não encontrado.');
-    return user;
+    // Remover campos sensíveis antes de retornar
+    const { password, oauthId, avatarKey, bannerKey, ...publicFields } = user as any;
+    return publicFields;
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {

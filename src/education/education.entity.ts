@@ -10,10 +10,12 @@ import {
 import { User } from '../users/user.entity';
 
 export enum EducationType {
-  UNIVERSITY = 'UNIVERSITY',
-  COURSE = 'COURSE',
-  DIPLOMA = 'DIPLOMA',
+  GRADUATE = 'GRADUATE',
+  POST_GRADUATE = 'POST_GRADUATE',
+  MASTER = 'MASTER',
+  DOCTORATE = 'DOCTORATE',
   CERTIFICATION = 'CERTIFICATION',
+  COURSE = 'COURSE',
 }
 
 @Entity('educations')

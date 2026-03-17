@@ -10,8 +10,7 @@ import { ProfileModule } from './profile/profile.module';
 import { EducationModule } from './education/education.module';
 import { CvModule } from './cv/cv.module';
 import { TagsModule } from './tags/tags.module';
-import { ArticlesModule } from './articles/articles.module';
-import { ProjectsModule } from './projects/projects.module';
+import { PortfolioModule } from './portfolio/portfolio.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
@@ -24,8 +23,7 @@ import { UploadsModule } from './uploads/uploads.module';
     EducationModule,
     CvModule,
     TagsModule,
-    ArticlesModule,
-    ProjectsModule,
+    PortfolioModule,
     UploadsModule,
   ],
   controllers: [AppController],

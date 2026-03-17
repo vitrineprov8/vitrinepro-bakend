@@ -14,45 +14,45 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ProjectsService } from './projects.service';
-import { CreateProjectDto } from './dto/create-project.dto';
-import { UpdateProjectDto } from './dto/update-project.dto';
-import { ListProjectsDto } from './dto/list-projects.dto';
+import { PortfolioService } from './portfolio.service';
+import { CreatePortfolioDto } from './dto/create-portfolio.dto';
+import { UpdatePortfolioDto } from './dto/update-portfolio.dto';
+import { ListPortfolioDto } from './dto/list-portfolio.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
-@Controller('projects')
-export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+@Controller('portfolio')
+export class PortfolioController {
+  constructor(private readonly portfolioService: PortfolioService) {}
 
   @Get()
-  findAll(@Query() query: ListProjectsDto) {
-    return this.projectsService.findAll(query);
+  findAll(@Query() query: ListPortfolioDto) {
+    return this.portfolioService.findAll(query);
   }
 
   @Get(':slug')
   @UseGuards(OptionalJwtAuthGuard)
   findBySlug(@Param('slug') slug: string, @Request() req) {
     const userId = req.user?.id;
-    return this.projectsService.findBySlug(slug, userId);
+    return this.portfolioService.findBySlug(slug, userId);
   }
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@Request() req, @Body() dto: CreateProjectDto) {
-    return this.projectsService.create(req.user.id, dto);
+  create(@Request() req, @Body() dto: CreatePortfolioDto) {
+    return this.portfolioService.create(req.user.id, dto);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
-  update(@Param('id') id: string, @Request() req, @Body() dto: UpdateProjectDto) {
-    return this.projectsService.update(id, req.user.id, dto);
+  update(@Param('id') id: string, @Request() req, @Body() dto: UpdatePortfolioDto) {
+    return this.portfolioService.update(id, req.user.id, dto);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   delete(@Param('id') id: string, @Request() req) {
-    return this.projectsService.delete(id, req.user.id);
+    return this.portfolioService.delete(id, req.user.id);
   }
 
   @Post(':id/cover')
@@ -65,40 +65,40 @@ export class ProjectsController {
     @Request() req,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.projectsService.uploadCover(id, req.user.id, file);
+    return this.portfolioService.uploadCover(id, req.user.id, file);
   }
 
-  @Post(':id/images')
+  @Post(':id/files')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
-    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } }),
+    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } }),
   )
-  addImage(
+  addFile(
     @Param('id') id: string,
     @Request() req,
     @UploadedFile() file: Express.Multer.File,
     @Body('caption') caption?: string,
   ) {
-    return this.projectsService.addImage(id, req.user.id, file, caption);
+    return this.portfolioService.addFile(id, req.user.id, file, caption);
   }
 
-  @Delete(':id/images/:imageId')
+  @Delete(':id/files/:fileId')
   @UseGuards(JwtAuthGuard)
-  deleteImage(
+  deleteFile(
     @Param('id') id: string,
-    @Param('imageId') imageId: string,
+    @Param('fileId') fileId: string,
     @Request() req,
   ) {
-    return this.projectsService.deleteImage(id, imageId, req.user.id);
+    return this.portfolioService.deleteFile(id, fileId, req.user.id);
   }
 
-  @Patch(':id/images/reorder')
+  @Patch(':id/files/reorder')
   @UseGuards(JwtAuthGuard)
-  reorderImages(
+  reorderFiles(
     @Param('id') id: string,
     @Request() req,
     @Body() body: { orders: { id: string; order: number }[] },
   ) {
-    return this.projectsService.reorderImages(id, req.user.id, body.orders);
+    return this.portfolioService.reorderFiles(id, req.user.id, body.orders);
   }
 }

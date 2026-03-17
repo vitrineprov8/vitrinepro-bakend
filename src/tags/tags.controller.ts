@@ -6,6 +6,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { TagsService } from './tags.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,19 +16,20 @@ export class TagsController {
   constructor(private readonly tagsService: TagsService) {}
 
   @Get()
-  findAll() {
-    return this.tagsService.findAll();
+  @UseGuards(JwtAuthGuard)
+  findAll(@Request() req) {
+    return this.tagsService.findAll(req.user.id);
   }
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@Body('name') name: string) {
-    return this.tagsService.create(name);
+  create(@Request() req, @Body('name') name: string) {
+    return this.tagsService.create(req.user.id, name);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  delete(@Param('id') id: string) {
-    return this.tagsService.delete(id);
+  delete(@Param('id') id: string, @Request() req) {
+    return this.tagsService.delete(id, req.user.id);
   }
 }

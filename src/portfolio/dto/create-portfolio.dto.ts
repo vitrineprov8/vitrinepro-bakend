@@ -8,9 +8,9 @@ import {
   IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ProjectStatus, ProjectWorkStatus } from '../project.entity';
+import { PortfolioStatus, PortfolioWorkStatus } from '../portfolio.entity';
 
-export class CreateProjectDto {
+export class CreatePortfolioDto {
   @IsNotEmpty()
   @IsString()
   title: string;
@@ -44,12 +44,12 @@ export class CreateProjectDto {
   role?: string;
 
   @IsOptional()
-  @IsEnum(ProjectWorkStatus)
-  projectStatus?: ProjectWorkStatus;
+  @IsEnum(PortfolioWorkStatus)
+  projectStatus?: PortfolioWorkStatus;
 
   @IsOptional()
-  @IsEnum(ProjectStatus)
-  status?: ProjectStatus;
+  @IsEnum(PortfolioStatus)
+  status?: PortfolioStatus;
 
   @IsOptional()
   @IsString()

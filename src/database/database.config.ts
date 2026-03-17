@@ -3,9 +3,8 @@ import { User } from '../users/user.entity';
 import { Education } from '../education/education.entity';
 import { CV } from '../cv/cv.entity';
 import { Tag } from '../tags/tag.entity';
-import { Article } from '../articles/article.entity';
-import { Project } from '../projects/project.entity';
-import { ProjectImage } from '../projects/project-image.entity';
+import { PortfolioItem } from '../portfolio/portfolio.entity';
+import { PortfolioFile } from '../portfolio/portfolio-file.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -13,7 +12,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
   ssl: {
     rejectUnauthorized: false,
   },
-  entities: [User, Education, CV, Tag, Article, Project, ProjectImage],
+  entities: [User, Education, CV, Tag, PortfolioItem, PortfolioFile],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',
 };
