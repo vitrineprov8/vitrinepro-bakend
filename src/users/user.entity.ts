@@ -41,6 +41,9 @@ export class User {
   @Column({ type: 'varchar', length: 500, nullable: true })
   bannerKey: string | null;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  bannerColor: string | null;
+
   @Column({ type: 'varchar', length: 100, unique: true, nullable: true })
   username: string | null;
 

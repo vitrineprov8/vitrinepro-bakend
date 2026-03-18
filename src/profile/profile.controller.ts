@@ -41,15 +41,6 @@ export class ProfileController {
     return this.profileService.uploadAvatar(req.user.id, file);
   }
 
-  @Post('banner')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(
-    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } }),
-  )
-  uploadBanner(@Request() req, @UploadedFile() file: Express.Multer.File) {
-    return this.profileService.uploadBanner(req.user.id, file);
-  }
-
   @Get(':username')
   getPublicProfile(@Param('username') username: string) {
     return this.profileService.getPublicProfile(username);

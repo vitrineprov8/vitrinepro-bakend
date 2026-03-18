@@ -45,4 +45,9 @@ export class UpdateProfileDto {
   @ValidateNested()
   @Type(() => SocialLinksDto)
   socialLinks?: SocialLinksDto;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  bannerColor?: string;
 }
