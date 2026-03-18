@@ -13,7 +13,6 @@ async function bootstrap() {
     'https://www.v8pro.com.br',
     'https://v8pro.com.br',
   ];
-
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
   );
