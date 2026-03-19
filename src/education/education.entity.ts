@@ -11,7 +11,7 @@ import { User } from '../users/user.entity';
 
 export enum EducationType {
   GRADUATE = 'GRADUATE',
-  POST_GRADUATE = 'POST_GRADUATE',
+  POST_GRADUATE = 'Pós Graduação',
   MASTER = 'MASTER',
   DOCTORATE = 'DOCTORATE',
   CERTIFICATION = 'CERTIFICATION',
