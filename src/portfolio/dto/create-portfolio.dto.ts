@@ -19,10 +19,6 @@ export class CreatePortfolioDto {
   @IsString()
   subtitle?: string;
 
-  @IsNotEmpty()
-  @IsString()
-  description: string;
-
   @IsOptional()
   content?: object;
 

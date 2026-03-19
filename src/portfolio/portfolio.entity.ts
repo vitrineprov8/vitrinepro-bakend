@@ -47,9 +47,6 @@ export class PortfolioItem {
   @Column({ type: 'varchar', length: 300, unique: true })
   slug: string;
 
-  @Column({ type: 'text' })
-  description: string;
-
   @Column({ type: 'jsonb', default: {} })
   content: object;
 

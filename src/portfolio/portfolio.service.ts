@@ -59,7 +59,6 @@ export class PortfolioService {
         title: item.title,
         subtitle: item.subtitle,
         slug: item.slug,
-        description: item.description,
         coverImageUrl: item.coverImageUrl,
         clientName: item.clientName,
         year: item.year,
@@ -95,7 +94,6 @@ export class PortfolioService {
       title: dto.title,
       subtitle: dto.subtitle,
       slug,
-      description: dto.description,
       content: dto.content || {},
       clientName: dto.clientName,
       year: dto.year,
@@ -124,7 +122,6 @@ export class PortfolioService {
     Object.assign(item, {
       title: dto.title ?? item.title,
       subtitle: dto.subtitle ?? item.subtitle,
-      description: dto.description ?? item.description,
       content: dto.content ?? item.content,
       clientName: dto.clientName ?? item.clientName,
       year: dto.year ?? item.year,
