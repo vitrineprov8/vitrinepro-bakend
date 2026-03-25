@@ -142,11 +142,13 @@ export class SearchService implements OnModuleInit {
 
     const nameWhere = hasQ
       ? `(LOWER(u."firstName" || ' ' || u."lastName") LIKE $${pqLike}
-         OR LOWER(COALESCE(u.username,'')) LIKE $${pqLike})`
+         OR LOWER(COALESCE(u.username,'')) LIKE $${pqLike}
+         OR LOWER(COALESCE(u.bio,'')) LIKE $${pqLike})`
       : 'TRUE';
 
     const specialtyWhere = hasQ
-      ? `LOWER(COALESCE(u.profession,'')) LIKE $${pqLike}`
+      ? `(LOWER(COALESCE(u.profession,'')) LIKE $${pqLike}
+         OR LOWER(COALESCE(u.bio,'')) LIKE $${pqLike})`
       : 'TRUE';
 
     const searchWhere =
@@ -173,10 +175,12 @@ export class SearchService implements OnModuleInit {
 
     const cntNameWhere = hasQ
       ? `(LOWER(u."firstName" || ' ' || u."lastName") LIKE $${cqLike}
-         OR LOWER(COALESCE(u.username,'')) LIKE $${cqLike})`
+         OR LOWER(COALESCE(u.username,'')) LIKE $${cqLike}
+         OR LOWER(COALESCE(u.bio,'')) LIKE $${cqLike})`
       : 'TRUE';
     const cntSpecialtyWhere = hasQ
-      ? `LOWER(COALESCE(u.profession,'')) LIKE $${cqLike}`
+      ? `(LOWER(COALESCE(u.profession,'')) LIKE $${cqLike}
+         OR LOWER(COALESCE(u.bio,'')) LIKE $${cqLike})`
       : 'TRUE';
     const cntSearchWhere = type === 'specialty' ? cntSpecialtyWhere : cntNameWhere;
     const cntCityWhere   = hasCity ? `AND LOWER(COALESCE(u.location,'')) LIKE $${cCity}` : '';
@@ -475,6 +479,15 @@ export class SearchService implements OnModuleInit {
     page: number,
     limit: number,
   ) {
+    // Filters that only apply to portfolio items — profiles have no projectStatus/tags/coverImage.
+    // When any of these are active, skip profile results entirely.
+    const portfolioOnlyFilters =
+      dto.projectStatus || dto.tagId || dto.hasImage === true;
+
+    if (portfolioOnlyFilters) {
+      return this.searchPortfolio(q, dto, page, limit);
+    }
+
     const [profilesResult, portfolioResult] = await Promise.all([
       this.searchUsers(q, 'professional', dto, 1, 200),
       this.searchPortfolio(q, dto, 1, 200),
