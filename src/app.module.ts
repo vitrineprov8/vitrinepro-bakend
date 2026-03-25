@@ -12,6 +12,8 @@ import { CvModule } from './cv/cv.module';
 import { TagsModule } from './tags/tags.module';
 import { PortfolioModule } from './portfolio/portfolio.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { SearchModule } from './search/search.module';
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -25,6 +27,10 @@ import { UploadsModule } from './uploads/uploads.module';
     TagsModule,
     PortfolioModule,
     UploadsModule,
+    SearchModule,
+    // SeedModule is only active outside production to prevent accidental data
+    // insertion or exposure of unauthenticated mutation endpoints in prod.
+    ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],
   providers: [AppService],
