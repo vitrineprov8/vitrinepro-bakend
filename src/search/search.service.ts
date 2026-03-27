@@ -158,11 +158,8 @@ export class SearchService implements OnModuleInit {
       ? `AND LOWER(COALESCE(u.location,'')) LIKE $${pCity}`
       : '';
 
-    // ── Existence guard: only show users with at least one published item ──
-    const existsGuard = `EXISTS (
-      SELECT 1 FROM portfolio_items p2
-      WHERE p2."userId" = u.id AND p2.status = 'PUBLISHED'
-    )`;
+    // ── Existence guard: only show users who have a profession set ──
+    const existsGuard = `u.profession IS NOT NULL AND u.profession <> ''`;
 
     // ── Count / cities params ─────────────────────────────────────────────
     // count and cities queries only need qLike and cityLike (no similarity).
@@ -555,10 +552,12 @@ export class SearchService implements OnModuleInit {
            u.username                            AS value,
            'professional'                        AS type
          FROM users u
-         INNER JOIN portfolio_items p
-           ON p."userId" = u.id AND p.status = 'PUBLISHED'
-         WHERE LOWER(u."firstName" || ' ' || u."lastName") LIKE $1
-            OR (u."firstName" != '' AND similarity(u."firstName" || ' ' || u."lastName", $2) > 0.15)
+         WHERE u.profession IS NOT NULL
+           AND u.profession <> ''
+           AND (
+             LOWER(u."firstName" || ' ' || u."lastName") LIKE $1
+             OR (u."firstName" != '' AND similarity(u."firstName" || ' ' || u."lastName", $2) > 0.15)
+           )
          GROUP BY u.id
          ORDER BY similarity(u."firstName" || ' ' || u."lastName", $2) DESC
          LIMIT 5`,
@@ -576,10 +575,8 @@ export class SearchService implements OnModuleInit {
            u.profession AS value,
            'specialty'  AS type
          FROM users u
-         INNER JOIN portfolio_items p
-           ON p."userId" = u.id AND p.status = 'PUBLISHED'
          WHERE u.profession IS NOT NULL
-           AND u.profession != ''
+           AND u.profession <> ''
            AND LOWER(u.profession) LIKE $1
          GROUP BY u.profession
          ORDER BY similarity(u.profession, $2) DESC
