@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { SeedController } from './seed.controller';
 import { SeedService } from './seed.service';
+import { FakeSeedService } from './fake-seed.service';
+import { StorageService } from '../storage/storage.service';
 
 /**
  * SeedModule — only registered in non-production environments.
@@ -11,6 +13,6 @@ import { SeedService } from './seed.service';
  */
 @Module({
   controllers: [SeedController],
-  providers: [SeedService],
+  providers: [SeedService, FakeSeedService, StorageService],
 })
 export class SeedModule {}

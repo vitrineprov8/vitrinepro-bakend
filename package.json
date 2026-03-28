@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed-cli.ts",
-    "seed:clear": "ts-node -r tsconfig-paths/register src/seed/seed-cli-clear.ts"
+    "seed:clear": "ts-node -r tsconfig-paths/register src/seed/seed-cli-clear.ts",
+    "seed:fake": "ts-node -r tsconfig-paths/register src/seed/fake-seed-cli.ts",
+    "seed:fake:clear": "ts-node -r tsconfig-paths/register src/seed/fake-seed-cli-clear.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.994.0",

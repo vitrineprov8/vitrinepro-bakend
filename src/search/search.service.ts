@@ -131,12 +131,59 @@ export class SearchService implements OnModuleInit {
            END, 0)`
       : '0';
 
-    const scoreSQL =
+    const relevanceSQL =
       type === 'specialty'
         ? professionScoreSQL
         : hasQ
           ? `GREATEST(${nameScoreSQL}, ${professionScoreSQL}, 0)`
           : '0';
+
+    // ── Profile completeness score (calculated entirely in SQL, no new columns) ──
+    //
+    // Points:
+    //   avatarUrl filled         → +20
+    //   bio filled               → +15
+    //   profession filled        → +15  (always true here due to existsGuard, but kept for clarity)
+    //   location filled          → +10
+    //   socialLinks networks     → +5 per non-empty value, capped at +20
+    //   website filled           → +5
+    //   published projects       → +10 per project, capped at +30  (uses the GROUP-level COUNT)
+    //   bannerColor customised   → +5
+    //   ─────────────────────────────────────────────────────────────
+    //   theoretical max          → ~120 points
+    //
+    // Social links: scalar subquery counts keys with a non-empty value inside
+    // the JSONB object. Falls back to 0 when the column is NULL or not an object.
+
+    const completudeSQL = `(
+      CASE WHEN u."avatarUrl" IS NOT NULL THEN 20 ELSE 0 END
+      + CASE WHEN COALESCE(u.bio, '') <> '' THEN 15 ELSE 0 END
+      + CASE WHEN COALESCE(u.profession, '') <> '' THEN 15 ELSE 0 END
+      + CASE WHEN COALESCE(u.location, '') <> '' THEN 10 ELSE 0 END
+      + LEAST(20, 5 * (
+          SELECT COUNT(*)::int
+          FROM jsonb_each_text(
+            CASE
+              WHEN jsonb_typeof(COALESCE(u."socialLinks", 'null'::jsonb)) = 'object'
+              THEN COALESCE(u."socialLinks", '{}'::jsonb)
+              ELSE '{}'::jsonb
+            END
+          ) kv
+          WHERE kv.value IS NOT NULL AND kv.value <> ''
+        ))
+      + CASE WHEN COALESCE(u.website, '') <> '' THEN 5 ELSE 0 END
+      + LEAST(30, 10 * COUNT(DISTINCT p.id)::int)
+      + CASE WHEN u."bannerColor" IS NOT NULL THEN 5 ELSE 0 END
+    )`;
+
+    // ── Final score combines relevance + completeness ─────────────────────
+    //
+    // With search text   → relevance (0-100) + completude/10 as tiebreaker (0-12)
+    // Browse / no text   → completude alone (profiles with richer content rank first)
+
+    const scoreSQL = hasQ
+      ? `(${relevanceSQL} + FLOOR(${completudeSQL}::numeric / 10))`
+      : completudeSQL;
 
     // ── WHERE clauses (mainSQL uses pqLike from `params`) ────────────────
 
@@ -195,6 +242,23 @@ export class SearchService implements OnModuleInit {
       cntParams,
     );
 
+    // ── ORDER BY clause ───────────────────────────────────────────────────
+    // sortBy:'date'      → order by updatedAt (direction from sortOrder)
+    // sortBy:'relevance' with query    → score = relevance + completude/10 → score DESC
+    // sortBy:'relevance' without query → score = completude alone            → score DESC
+    //
+    // The "browse" case previously ordered by updatedAt DESC; it now uses the
+    // completeness score so that richer profiles surface first.
+    let orderByClause: string;
+    if (dto.sortBy === 'date') {
+      const dir = dto.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+      orderByClause = `u."updatedAt" ${dir}, u."firstName" ASC`;
+    } else {
+      // Relevance sort (default) — works for both query and browse modes
+      // because scoreSQL already encodes the right expression for each case.
+      orderByClause = `score DESC, u."firstName" ASC`;
+    }
+
     // ── Main SELECT ───────────────────────────────────────────────────────
     const mainSQL = `
       SELECT
@@ -210,6 +274,7 @@ export class SearchService implements OnModuleInit {
         u.phone,
         u.website,
         u."socialLinks",
+        u."updatedAt",
         COUNT(DISTINCT p.id)::int AS "projectCount",
         ${scoreSQL} AS score
       FROM users u
@@ -219,7 +284,7 @@ export class SearchService implements OnModuleInit {
         AND ${searchWhere}
         ${cityWhere}
       GROUP BY u.id
-      ORDER BY score DESC, u."firstName" ASC
+      ORDER BY ${orderByClause}
       LIMIT $${pLimit} OFFSET $${pOffset}
     `;
 
@@ -237,6 +302,7 @@ export class SearchService implements OnModuleInit {
         phone: string | null;
         website: string | null;
         socialLinks: Record<string, string> | null;
+        updatedAt: string;
         projectCount: number;
         score: number;
       }>
@@ -312,6 +378,39 @@ export class SearchService implements OnModuleInit {
       .leftJoinAndSelect('p.tags', 'tag')
       .where('p.status = :status', { status: 'PUBLISHED' });
 
+    // ── Portfolio completeness score ───────────────────────────────────────
+    // Calculated entirely in SQL via a correlated tag-count subquery.
+    // A QueryBuilder with leftJoinAndSelect manages its own GROUP BY internally,
+    // so we cannot reference the joined `tag` alias in addSelect expressions —
+    // a correlated subquery is the safe approach here.
+    //
+    // Points:
+    //   title filled                  → +20
+    //   coverImageUrl filled          → +25
+    //   subtitle filled               → +15
+    //   tags (COUNT, capped at 4)     → +5 each, max +20
+    //   projectStatus filled          → +10
+    //   files/images (capped at 5)    → +5 each, max +25
+    //   ─────────────────────────────────────
+    //   theoretical max               → ~115 points
+
+    const portfolioCompletude = `(
+      CASE WHEN COALESCE(p.title, '') <> '' THEN 20 ELSE 0 END
+      + CASE WHEN p."coverImageUrl" IS NOT NULL THEN 25 ELSE 0 END
+      + CASE WHEN COALESCE(p.subtitle, '') <> '' THEN 15 ELSE 0 END
+      + LEAST(20, 5 * (
+          SELECT COUNT(DISTINCT pt_c."tagsId")::int
+          FROM portfolio_tags pt_c
+          WHERE pt_c."portfolioItemsId" = p.id
+        ))
+      + CASE WHEN p."projectStatus" IS NOT NULL THEN 10 ELSE 0 END
+      + LEAST(25, 5 * (
+          SELECT COUNT(*)::int
+          FROM portfolio_files pf
+          WHERE pf."portfolioItemId" = p.id
+        ))
+    )`;
+
     if (q) {
       // Score expressions — use TypeORM named parameters here because
       // QueryBuilder manages its own parameter binding internally.
@@ -321,6 +420,15 @@ export class SearchService implements OnModuleInit {
           WHEN LOWER(p.title) LIKE :qStart THEN 80
           WHEN LOWER(p.title) LIKE :qLike  THEN 40
           ELSE FLOOR(similarity(p.title, :q) * 30)
+        END, 0)`;
+
+      // Subtitle has intermediate weight: more than tag body, less than title.
+      const subtitleScore = `GREATEST(
+        CASE
+          WHEN LOWER(COALESCE(p.subtitle, '')) = LOWER(:q)  THEN 70
+          WHEN LOWER(COALESCE(p.subtitle, '')) LIKE :qStart THEN 55
+          WHEN LOWER(COALESCE(p.subtitle, '')) LIKE :qLike  THEN 30
+          ELSE FLOOR(similarity(COALESCE(p.subtitle, ''), :q) * 25)
         END, 0)`;
 
       const tagScore = `COALESCE((
@@ -336,13 +444,18 @@ export class SearchService implements OnModuleInit {
         WHERE pt2."portfolioItemsId" = p.id
       ), 0)`;
 
-      qb.addSelect(`GREATEST(${titleScore}, ${tagScore}, 0)`, 'score');
+      // Final score: best of (title, subtitle, tag) + completeness as tiebreaker
+      qb.addSelect(
+        `GREATEST(${titleScore}, ${subtitleScore}, ${tagScore}, 0) + FLOOR(${portfolioCompletude}::numeric / 10)`,
+        'score',
+      );
       qb.setParameter('q', q);
       qb.setParameter('qLike', `%${q.toLowerCase()}%`);
       qb.setParameter('qStart', `${q.toLowerCase()}%`);
 
       qb.andWhere(`(
         LOWER(p.title) LIKE :qLike
+        OR LOWER(COALESCE(p.subtitle, '')) LIKE :qLike
         OR EXISTS (
           SELECT 1 FROM portfolio_tags pt3
           JOIN tags t3 ON t3.id = pt3."tagsId"
@@ -388,12 +501,23 @@ export class SearchService implements OnModuleInit {
     }
 
     // Sorting
+    // sortBy:'date'      → createdAt (direction from sortOrder)
+    // sortBy:'year'      → year (direction from sortOrder)
+    // sortBy:'relevance' with query    → score (relevance + completude/10), already in SELECT
+    // sortBy:'relevance' without query → completude score drives ranking (browse mode)
     if (dto.sortBy === 'date') {
       qb.orderBy('p.createdAt', (dto.sortOrder as 'ASC' | 'DESC') || 'DESC');
     } else if (dto.sortBy === 'year') {
       qb.orderBy('p.year', (dto.sortOrder as 'ASC' | 'DESC') || 'DESC');
+    } else if (q) {
+      // score alias is in SELECT (set above inside the `if (q)` block)
+      qb.orderBy('score', 'DESC');
     } else {
-      qb.orderBy(q ? 'score' : 'p.createdAt', 'DESC');
+      // Browse mode: order by completeness so richer projects surface first.
+      // TypeORM's orderBy() resolves strings as aliases, not raw SQL — so we
+      // must expose the expression as a named SELECT alias first.
+      qb.addSelect(`(${portfolioCompletude})`, 'completude_score');
+      qb.orderBy('completude_score', 'DESC');
     }
 
     // Metadata pass: collect cities + available tag ids without pagination
