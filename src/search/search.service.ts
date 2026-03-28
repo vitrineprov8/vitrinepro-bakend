@@ -116,7 +116,6 @@ export class SearchService implements OnModuleInit {
            CASE
              WHEN LOWER(u."firstName" || ' ' || u."lastName") = LOWER($${pq})  THEN 100
              WHEN LOWER(u."firstName" || ' ' || u."lastName") LIKE $${pqLike}  THEN 80
-             WHEN LOWER(u."firstName" || ' ' || u."lastName") LIKE $${pqLike}  THEN 40
              ELSE FLOOR(similarity(u."firstName" || ' ' || u."lastName", $${pq}) * 30)
            END, 0)`
       : '0';
@@ -126,7 +125,6 @@ export class SearchService implements OnModuleInit {
            CASE
              WHEN LOWER(COALESCE(u.profession,'')) = LOWER($${pq})  THEN 100
              WHEN LOWER(COALESCE(u.profession,'')) LIKE $${pqLike}  THEN 80
-             WHEN LOWER(COALESCE(u.profession,'')) LIKE $${pqLike}  THEN 40
              ELSE FLOOR(similarity(COALESCE(u.profession,''), $${pq}) * 30)
            END, 0)`
       : '0';
@@ -190,6 +188,7 @@ export class SearchService implements OnModuleInit {
     const nameWhere = hasQ
       ? `(LOWER(u."firstName" || ' ' || u."lastName") LIKE $${pqLike}
          OR LOWER(COALESCE(u.username,'')) LIKE $${pqLike}
+         OR LOWER(COALESCE(u.profession,'')) LIKE $${pqLike}
          OR LOWER(COALESCE(u.bio,'')) LIKE $${pqLike})`
       : 'TRUE';
 
@@ -220,6 +219,7 @@ export class SearchService implements OnModuleInit {
     const cntNameWhere = hasQ
       ? `(LOWER(u."firstName" || ' ' || u."lastName") LIKE $${cqLike}
          OR LOWER(COALESCE(u.username,'')) LIKE $${cqLike}
+         OR LOWER(COALESCE(u.profession,'')) LIKE $${cqLike}
          OR LOWER(COALESCE(u.bio,'')) LIKE $${cqLike})`
       : 'TRUE';
     const cntSpecialtyWhere = hasQ
