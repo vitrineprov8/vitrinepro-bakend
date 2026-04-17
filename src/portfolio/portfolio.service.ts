@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { PortfolioItem, PortfolioStatus } from './portfolio.entity';
 import { PortfolioFile, PortfolioFileType } from './portfolio-file.entity';
 import { CreatePortfolioDto } from './dto/create-portfolio.dto';
@@ -24,6 +24,7 @@ export class PortfolioService {
     private filesRepository: Repository<PortfolioFile>,
     private tagsService: TagsService,
     private storageService: StorageService,
+    private dataSource: DataSource,
   ) {}
 
   async findAll(dto: ListPortfolioDto) {
@@ -65,6 +66,12 @@ export class PortfolioService {
         projectStatus: item.projectStatus,
         status: item.status,
         tags: item.tags,
+        isService: item.isService,
+        serviceType: item.serviceType,
+        actionButton: item.actionButton,
+        servicePrice: item.servicePrice,
+        publicationDurationDays: item.publicationDurationDays,
+        isFeatured: item.isFeatured,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         author: (item as any).user,
@@ -103,12 +110,18 @@ export class PortfolioService {
       status: dto.status || PortfolioStatus.DRAFT,
       externalUrl: dto.externalUrl,
       tags,
+      isService: dto.isService ?? false,
+      serviceType: dto.serviceType ?? null,
+      actionButton: dto.actionButton ?? null,
+      servicePrice: dto.servicePrice ?? null,
+      publicationDurationDays: dto.publicationDurationDays ?? null,
     });
 
     return this.portfolioRepository.save(item);
   }
 
   async update(id: string, userId: string, dto: UpdatePortfolioDto): Promise<PortfolioItem> {
+    // Resolve slug and tags outside the transaction (both are read-only lookups).
     const item = await this.findOneOrFail(id, userId);
 
     if (dto.title && dto.title !== item.title) {
@@ -130,7 +143,33 @@ export class PortfolioService {
       projectStatus: dto.projectStatus !== undefined ? dto.projectStatus : item.projectStatus,
       status: dto.status ?? item.status,
       externalUrl: dto.externalUrl ?? item.externalUrl,
+      isService: dto.isService !== undefined ? dto.isService : item.isService,
+      serviceType: dto.serviceType !== undefined ? dto.serviceType : item.serviceType,
+      actionButton: dto.actionButton !== undefined ? dto.actionButton : item.actionButton,
+      servicePrice: dto.servicePrice !== undefined ? dto.servicePrice : item.servicePrice,
+      publicationDurationDays:
+        dto.publicationDurationDays !== undefined
+          ? dto.publicationDurationDays
+          : item.publicationDurationDays,
+      isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : item.isFeatured,
     });
+
+    // Business rule: only one featured item is allowed per user at a time.
+    // When isFeatured is being set to true, clear the flag on all sibling items
+    // atomically in a single transaction to prevent race conditions.
+    if (dto.isFeatured === true) {
+      return this.dataSource.transaction(async (manager) => {
+        // Unset isFeatured on every OTHER item owned by this user.
+        await manager
+          .createQueryBuilder()
+          .update(PortfolioItem)
+          .set({ isFeatured: false })
+          .where('"userId" = :userId AND id != :id', { userId, id })
+          .execute();
+
+        return manager.save(PortfolioItem, item);
+      });
+    }
 
     return this.portfolioRepository.save(item);
   }

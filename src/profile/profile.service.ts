@@ -25,7 +25,8 @@ export class ProfileService {
 
   async getPublicProfile(username: string): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { username } });
-    if (!user) throw new NotFoundException('Perfil não encontrado.');
+    // Return 404 for missing users AND hidden profiles (avoids username enumeration)
+    if (!user || !user.isVisible) throw new NotFoundException('Perfil não encontrado.');
     // Remover campos sensíveis antes de retornar
     const { password, oauthId, avatarKey, bannerKey, ...publicFields } = user as any;
     return publicFields;

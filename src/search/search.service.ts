@@ -204,8 +204,8 @@ export class SearchService implements OnModuleInit {
       ? `AND LOWER(COALESCE(u.location,'')) LIKE $${pCity}`
       : '';
 
-    // ── Existence guard: only show users who have a profession set ──
-    const existsGuard = `u.profession IS NOT NULL AND u.profession <> ''`;
+    // ── Existence guard: only show users who have a profession set and are visible ──
+    const existsGuard = `u.profession IS NOT NULL AND u.profession <> '' AND u."isVisible" = true`;
 
     // ── Count / cities params ─────────────────────────────────────────────
     // count and cities queries only need qLike and cityLike (no similarity).
@@ -564,6 +564,10 @@ export class SearchService implements OnModuleInit {
         year: item.year,
         projectStatus: item.projectStatus,
         status: item.status,
+        isService: item.isService,
+        serviceType: item.serviceType,
+        actionButton: item.actionButton,
+        servicePrice: item.servicePrice,
         tags: item.tags ?? [],
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,

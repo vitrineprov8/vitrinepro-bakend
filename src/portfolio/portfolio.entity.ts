@@ -77,6 +77,36 @@ export class PortfolioItem {
   @Column({ type: 'varchar', length: 500, nullable: true })
   externalUrl: string | null;
 
+  // --- Service offering fields ---
+
+  /** When true, this item represents a service rather than a portfolio work. */
+  @Column({ type: 'boolean', default: false })
+  isService: boolean;
+
+  /** Category of service: e.g. "Agendamento", "Orçamento", "Projeto", "Venda Unitária", "Venda Pacote". */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  serviceType: string | null;
+
+  /** CTA button label: e.g. "EU QUERO", "AGENDAR", "SAIBA MAIS", "CONVERSAR", "WHATSAPP", "VEJA SITE". */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  actionButton: string | null;
+
+  /** Service price in BRL (e.g. 250.00). */
+  @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
+  servicePrice: number | null;
+
+  /** Number of days to keep the service listing active (max 30). */
+  @Column({ type: 'int', nullable: true })
+  publicationDurationDays: number | null;
+
+  /**
+   * When true, this item is highlighted as "MAIS CONTRATADO" on the public profile.
+   * Only one item per user may have this set to true at a time — the service layer
+   * enforces the single-featured constraint by clearing all siblings on update.
+   */
+  @Column({ type: 'boolean', default: false, nullable: false })
+  isFeatured: boolean;
+
   @ManyToMany(() => Tag, { cascade: true, eager: false })
   @JoinTable({ name: 'portfolio_tags' })
   tags: Tag[];

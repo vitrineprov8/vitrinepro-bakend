@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUrl, MaxLength, ValidateNested } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUrl, MaxLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class SocialLinksDto {
@@ -50,4 +50,8 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(500)
   bannerColor?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
 }
