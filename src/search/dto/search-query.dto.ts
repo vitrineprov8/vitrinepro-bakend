@@ -58,6 +58,12 @@ export class SearchQueryDto {
   @IsDateString()
   dateTo?: string;
 
+  /** Filter to only service items (isService = true) */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  isService?: boolean;
+
   /** Filter items that contain a specific tag UUID */
   @IsOptional()
   @IsUUID()
