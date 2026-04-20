@@ -254,15 +254,34 @@ export class PortfolioService {
       order: nextOrder,
     });
 
-    return this.filesRepository.save(portfolioFile);
+    const saved = await this.filesRepository.save(portfolioFile);
+
+    // Se é IMAGEM e ainda não existe coverImageUrl, usar esta como capa do item
+    // (primeira foto da galeria = capa, conforme feedback do cliente).
+    if (fileType === PortfolioFileType.IMAGE && !item.coverImageUrl) {
+      item.coverImageUrl = fileUrl;
+      await this.portfolioRepository.save(item);
+    }
+
+    return saved;
   }
 
   async deleteFile(portfolioItemId: string, fileId: string, userId: string): Promise<void> {
-    await this.findOneOrFail(portfolioItemId, userId);
+    const item = await this.findOneOrFail(portfolioItemId, userId);
     const file = await this.filesRepository.findOne({ where: { id: fileId, portfolioItemId } });
     if (!file) throw new NotFoundException('Arquivo não encontrado.');
     await this.storageService.deleteFile(file.fileKey);
     await this.filesRepository.remove(file);
+
+    // Se o arquivo removido era a capa, promover a próxima imagem (ordem ASC) ou limpar.
+    if (file.fileUrl === item.coverImageUrl) {
+      const nextImage = await this.filesRepository.findOne({
+        where: { portfolioItemId, fileType: PortfolioFileType.IMAGE },
+        order: { order: 'ASC' },
+      });
+      item.coverImageUrl = nextImage?.fileUrl ?? null;
+      await this.portfolioRepository.save(item);
+    }
   }
 
   async reorderFiles(
@@ -270,9 +289,19 @@ export class PortfolioService {
     userId: string,
     orders: { id: string; order: number }[],
   ): Promise<void> {
-    await this.findOneOrFail(portfolioItemId, userId);
-    for (const item of orders) {
-      await this.filesRepository.update({ id: item.id, portfolioItemId }, { order: item.order });
+    const item = await this.findOneOrFail(portfolioItemId, userId);
+    for (const order of orders) {
+      await this.filesRepository.update({ id: order.id, portfolioItemId }, { order: order.order });
+    }
+
+    // Após reordenar, a capa deve refletir a primeira IMAGEM na nova ordem.
+    const firstImage = await this.filesRepository.findOne({
+      where: { portfolioItemId, fileType: PortfolioFileType.IMAGE },
+      order: { order: 'ASC' },
+    });
+    if (firstImage && firstImage.fileUrl !== item.coverImageUrl) {
+      item.coverImageUrl = firstImage.fileUrl;
+      await this.portfolioRepository.save(item);
     }
   }
 
