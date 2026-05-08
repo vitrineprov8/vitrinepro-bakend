@@ -5,6 +5,8 @@ import { CV } from '../cv/cv.entity';
 import { Tag } from '../tags/tag.entity';
 import { PortfolioItem } from '../portfolio/portfolio.entity';
 import { PortfolioFile } from '../portfolio/portfolio-file.entity';
+import { Vaga } from '../vagas/vaga.entity';
+import { VagaApplication } from '../vaga-applications/vaga-application.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -12,7 +14,16 @@ export const databaseConfig: TypeOrmModuleOptions = {
   ssl: {
     rejectUnauthorized: false,
   },
-  entities: [User, Education, CV, Tag, PortfolioItem, PortfolioFile],
+  entities: [
+    User,
+    Education,
+    CV,
+    Tag,
+    PortfolioItem,
+    PortfolioFile,
+    Vaga,
+    VagaApplication,
+  ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',
 };

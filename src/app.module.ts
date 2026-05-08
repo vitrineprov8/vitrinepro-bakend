@@ -14,6 +14,8 @@ import { PortfolioModule } from './portfolio/portfolio.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { SearchModule } from './search/search.module';
 import { SeedModule } from './seed/seed.module';
+import { VagasModule } from './vagas/vagas.module';
+import { VagaApplicationsModule } from './vaga-applications/vaga-applications.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { SeedModule } from './seed/seed.module';
     PortfolioModule,
     UploadsModule,
     SearchModule,
+    VagasModule,
+    VagaApplicationsModule,
     // SeedModule is only active outside production to prevent accidental data
     // insertion or exposure of unauthenticated mutation endpoints in prod.
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
