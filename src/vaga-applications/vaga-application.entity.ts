@@ -19,6 +19,11 @@ export enum ApplicationStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum ApplicationSource {
+  NATIVE = 'NATIVE',
+  GUPY_REDIRECT = 'GUPY_REDIRECT',
+}
+
 @Entity('vaga_applications')
 @Unique(['vagaId', 'userId'])
 export class VagaApplication {
@@ -67,6 +72,13 @@ export class VagaApplication {
     default: ApplicationStatus.PENDING,
   })
   status: ApplicationStatus;
+
+  @Column({
+    type: 'enum',
+    enum: ApplicationSource,
+    default: ApplicationSource.NATIVE,
+  })
+  source: ApplicationSource;
 
   @CreateDateColumn()
   createdAt: Date;

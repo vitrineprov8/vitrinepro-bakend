@@ -6,11 +6,13 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { VagaStatus, VagaType, VagaWorkMode } from '../vaga.entity';
+import { VagaSource, VagaStatus, VagaType, VagaWorkMode } from '../vaga.entity';
 
 export class CreateVagaDto {
   @IsNotEmpty()
@@ -66,4 +68,24 @@ export class CreateVagaDto {
   @IsOptional()
   @IsEmail()
   contactEmail?: string;
+
+  @IsOptional()
+  @IsEnum(VagaSource)
+  source?: VagaSource;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  companyName?: string;
+
+  @ValidateIf((o) => o.source === VagaSource.GUPY)
+  @IsNotEmpty({ message: 'gupyConfigId é obrigatório para vagas Gupy.' })
+  @IsUUID()
+  gupyConfigId?: string;
+
+  @ValidateIf((o) => o.source === VagaSource.GUPY)
+  @IsNotEmpty({ message: 'externalJobId é obrigatório para vagas Gupy.' })
+  @IsString()
+  @MaxLength(100)
+  externalJobId?: string;
 }

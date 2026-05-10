@@ -8,13 +8,20 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
+  ApplicationSource,
   ApplicationStatus,
   VagaApplication,
 } from './vaga-application.entity';
-import { Vaga, VagaStatus } from '../vagas/vaga.entity';
+import { Vaga, VagaSource, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 import { User } from '../users/user.entity';
 import { ApplyDto } from './dto/apply.dto';
+import { GupyService } from '../gupy/gupy.service';
+
+export interface ApplyResult {
+  application: VagaApplication;
+  redirectUrl?: string;
+}
 
 @Injectable()
 export class VagaApplicationsService {
@@ -27,14 +34,18 @@ export class VagaApplicationsService {
     private cvRepository: Repository<CV>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private readonly gupyService: GupyService,
   ) {}
 
   async apply(
     userId: string,
     slug: string,
     dto: ApplyDto,
-  ): Promise<VagaApplication> {
-    const vaga = await this.vagasRepository.findOne({ where: { slug } });
+  ): Promise<ApplyResult> {
+    const vaga = await this.vagasRepository.findOne({
+      where: { slug },
+      relations: ['gupyConfig'],
+    });
     if (!vaga) throw new NotFoundException('Vaga não encontrada.');
 
     if (vaga.status !== VagaStatus.PUBLISHED) {
@@ -62,7 +73,6 @@ export class VagaApplicationsService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
-    // Sincroniza campos vazios do perfil com os dados informados na candidatura.
     const profileUpdates: Partial<User> = {};
     if (!user.phone && dto.phone) profileUpdates.phone = dto.phone;
     if (!user.location && dto.location) profileUpdates.location = dto.location;
@@ -75,6 +85,8 @@ export class VagaApplicationsService {
       await this.usersRepository.update(userId, profileUpdates);
     }
 
+    const isGupy = vaga.source === VagaSource.GUPY;
+
     const application = this.applicationsRepository.create({
       vagaId: vaga.id,
       userId,
@@ -85,35 +97,66 @@ export class VagaApplicationsService {
       snapshotPhone: dto.phone ?? null,
       snapshotLocation: dto.location ?? null,
       status: ApplicationStatus.PENDING,
+      source: isGupy
+        ? ApplicationSource.GUPY_REDIRECT
+        : ApplicationSource.NATIVE,
     });
 
-    return this.applicationsRepository.save(application);
+    const saved = await this.applicationsRepository.save(application);
+
+    if (isGupy && vaga.gupyConfig && vaga.externalJobId) {
+      const redirectUrl = this.gupyService.buildJobUrl(
+        vaga.gupyConfig.subdomain,
+        vaga.externalJobId,
+      );
+      return { application: saved, redirectUrl };
+    }
+
+    return { application: saved };
   }
 
   async listMine(userId: string): Promise<any[]> {
     const apps = await this.applicationsRepository.find({
       where: { userId },
-      relations: ['vaga'],
+      relations: ['vaga', 'vaga.gupyConfig'],
       order: { createdAt: 'DESC' },
     });
 
-    return apps.map((a) => ({
-      id: a.id,
-      status: a.status,
-      message: a.message,
-      createdAt: a.createdAt,
-      vaga: a.vaga
-        ? {
-            id: a.vaga.id,
-            slug: a.vaga.slug,
-            title: a.vaga.title,
-            status: a.vaga.status,
-            location: a.vaga.location,
-            type: a.vaga.type,
-            workMode: a.vaga.workMode,
-          }
-        : null,
-    }));
+    return apps.map((a) => {
+      let externalUrl: string | null = null;
+      if (
+        a.vaga &&
+        a.vaga.source === VagaSource.GUPY &&
+        a.vaga.gupyConfig &&
+        a.vaga.externalJobId
+      ) {
+        externalUrl = this.gupyService.buildJobUrl(
+          a.vaga.gupyConfig.subdomain,
+          a.vaga.externalJobId,
+        );
+      }
+      return {
+        id: a.id,
+        status: a.status,
+        source: a.source,
+        message: a.message,
+        createdAt: a.createdAt,
+        vaga: a.vaga
+          ? {
+              id: a.vaga.id,
+              slug: a.vaga.slug,
+              title: a.vaga.title,
+              status: a.vaga.status,
+              location: a.vaga.location,
+              type: a.vaga.type,
+              workMode: a.vaga.workMode,
+              source: a.vaga.source,
+              companyName: a.vaga.companyName,
+              externalUrl,
+            }
+          : null,
+      };
+    });
   }
 
   async listByVaga(vagaId: string): Promise<any[]> {
@@ -126,6 +169,7 @@ export class VagaApplicationsService {
     return apps.map((a) => ({
       id: a.id,
       status: a.status,
+      source: a.source,
       message: a.message,
       snapshotFullName: a.snapshotFullName,
       snapshotEmail: a.snapshotEmail,

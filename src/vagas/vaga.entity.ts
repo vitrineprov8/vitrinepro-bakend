@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
+import { GupyConfig } from '../gupy/gupy-config.entity';
 
 export enum VagaStatus {
   DRAFT = 'DRAFT',
@@ -26,6 +27,11 @@ export enum VagaWorkMode {
   REMOTE = 'REMOTE',
   HYBRID = 'HYBRID',
   ONSITE = 'ONSITE',
+}
+
+export enum VagaSource {
+  NATIVE = 'NATIVE',
+  GUPY = 'GUPY',
 }
 
 @Entity('vagas')
@@ -71,6 +77,25 @@ export class Vaga {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   contactEmail: string | null;
+
+  @Column({ type: 'enum', enum: VagaSource, default: VagaSource.NATIVE })
+  source: VagaSource;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  companyName: string | null;
+
+  @ManyToOne(() => GupyConfig, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'gupyConfigId' })
+  gupyConfig: GupyConfig | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  gupyConfigId: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  externalJobId: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastSyncedAt: Date | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })

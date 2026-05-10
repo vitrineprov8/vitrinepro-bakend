@@ -16,6 +16,7 @@ import { SearchModule } from './search/search.module';
 import { SeedModule } from './seed/seed.module';
 import { VagasModule } from './vagas/vagas.module';
 import { VagaApplicationsModule } from './vaga-applications/vaga-applications.module';
+import { GupyModule } from './gupy/gupy.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { VagaApplicationsModule } from './vaga-applications/vaga-applications.mo
     PortfolioModule,
     UploadsModule,
     SearchModule,
+    GupyModule,
     VagasModule,
     VagaApplicationsModule,
     // SeedModule is only active outside production to prevent accidental data

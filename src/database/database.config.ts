@@ -7,6 +7,7 @@ import { PortfolioItem } from '../portfolio/portfolio.entity';
 import { PortfolioFile } from '../portfolio/portfolio-file.entity';
 import { Vaga } from '../vagas/vaga.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
+import { GupyConfig } from '../gupy/gupy-config.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -23,6 +24,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     PortfolioFile,
     Vaga,
     VagaApplication,
+    GupyConfig,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',
