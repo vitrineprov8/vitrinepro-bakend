@@ -1,8 +1,15 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { TagsService } from '../tags/tags.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '../users/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -10,6 +17,8 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private tagsService: TagsService,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
   ) {}
 
   async register(registerDto: {
@@ -18,26 +27,23 @@ export class AuthService {
     lastName: string;
     password: string;
   }) {
-    // Validar si el usuario ya existe
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new BadRequestException('El email ya está registrado');
     }
 
-    // Hashear la contraseña
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    const referralCode = await this.generateReferralCode();
 
-    // Crear el usuario
     const user = await this.usersService.create({
       ...registerDto,
       password: hashedPassword,
       authProvider: 'local',
+      referralCode,
     });
 
-    // Criar tags padrão para o novo usuário
     await this.tagsService.createDefaultTagsForUser(user.id);
 
-    // Generar JWT
     const token = this.generateToken(user);
 
     return {
@@ -53,31 +59,28 @@ export class AuthService {
   }
 
   async login(loginDto: { email: string; password: string }) {
-    // Buscar el usuario por email
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Email o contraseña incorrectos');
     }
 
-    // Validar que el usuario no use OAuth
     if (user.authProvider && user.authProvider !== 'local') {
       throw new UnauthorizedException(
-        `Esta cuenta usa autenticación de ${user.authProvider}. Por favor inicia sesión con ${user.authProvider}.`
+        `Esta cuenta usa autenticación de ${user.authProvider}. Por favor inicia sesión con ${user.authProvider}.`,
       );
     }
 
-    // Validar que el usuario tenga contraseña
     if (!user.password) {
-      throw new UnauthorizedException('Esta cuenta no tiene contraseña configurada');
+      throw new UnauthorizedException(
+        'Esta cuenta no tiene contraseña configurada',
+      );
     }
 
-    // Validar contraseña
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Email o contraseña incorrectos');
     }
 
-    // Generar JWT
     const token = this.generateToken(user);
 
     return {
@@ -108,11 +111,14 @@ export class AuthService {
     avatarUrl: string | null;
     provider: 'google' | 'linkedin';
   }) {
-    // Buscar usuario por oauthId + provider
-    let user = await this.usersService.findByOAuthId(oauthData.oauthId, oauthData.provider);
+    // Try to find by oauthId + provider first
+    let user = await this.usersService.findByOAuthId(
+      oauthData.oauthId,
+      oauthData.provider,
+    );
 
     if (user) {
-      // Usuario OAuth existente - actualizar profile data
+      // Existing OAuth user — update profile data
       user = await this.usersService.update(user.id, {
         firstName: oauthData.firstName,
         lastName: oauthData.lastName,
@@ -121,11 +127,11 @@ export class AuthService {
       return user;
     }
 
-    // Buscar por email para vincular automáticamente
+    // Try to find by email to link existing account
     user = await this.usersService.findByEmail(oauthData.email);
 
     if (user) {
-      // Vincular cuenta existente con OAuth
+      // Link existing account with OAuth
       user = await this.usersService.update(user.id, {
         oauthId: oauthData.oauthId,
         authProvider: oauthData.provider,
@@ -136,7 +142,9 @@ export class AuthService {
       return user;
     }
 
-    // Crear nuevo usuario OAuth
+    // Create brand-new OAuth user with a referral code
+    const referralCode = await this.generateReferralCode();
+
     user = await this.usersService.create({
       email: oauthData.email,
       firstName: oauthData.firstName,
@@ -145,20 +153,47 @@ export class AuthService {
       authProvider: oauthData.provider,
       oauthId: oauthData.oauthId,
       avatarUrl: oauthData.avatarUrl,
+      referralCode,
     });
 
-    // Criar tags padrão para o novo usuário OAuth
     await this.tagsService.createDefaultTagsForUser(user.id);
 
     return user;
   }
 
-  public generateToken(user: any) {
+  public generateToken(user: User) {
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
     };
     return this.jwtService.sign(payload);
+  }
+
+  /**
+   * Generates a unique 8-character alphanumeric uppercase referral code.
+   * Retries up to 5 times on uniqueness collision before throwing.
+   */
+  private async generateReferralCode(): Promise<string> {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const length = 8;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      let code = '';
+      for (let i = 0; i < length; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
+      }
+
+      const existing = await this.usersRepository.findOne({
+        where: { referralCode: code },
+        select: ['id'],
+      });
+
+      if (!existing) return code;
+    }
+
+    throw new BadRequestException(
+      'Não foi possível gerar um código de indicação único. Tente novamente.',
+    );
   }
 }

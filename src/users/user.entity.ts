@@ -11,6 +11,20 @@ export enum UserRole {
   ADMIN = 'ADMIN',
 }
 
+export enum PlanTier {
+  FREE = 'FREE',
+  PERSONAL = 'PERSONAL',
+  HUNTER = 'HUNTER',
+  EMPRESARIAL = 'EMPRESARIAL',
+}
+
+export enum PlanStatus {
+  NONE = 'NONE',
+  ACTIVE = 'ACTIVE',
+  EXPIRED = 'EXPIRED',
+  PENDING = 'PENDING',
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -86,6 +100,18 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role: UserRole;
+
+  @Column({ type: 'enum', enum: PlanTier, default: PlanTier.FREE })
+  plan: PlanTier;
+
+  @Column({ type: 'enum', enum: PlanStatus, default: PlanStatus.NONE })
+  planStatus: PlanStatus;
+
+  @Column({ type: 'timestamp', nullable: true })
+  planExpiresAt: Date | null;
+
+  @Column({ type: 'varchar', length: 16, unique: true, nullable: true })
+  referralCode: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

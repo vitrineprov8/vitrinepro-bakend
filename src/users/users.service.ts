@@ -36,6 +36,7 @@ export class UsersService {
     authProvider?: 'local' | 'google' | 'linkedin' | null;
     oauthId?: string | null;
     avatarUrl?: string | null;
+    referralCode?: string | null;
   }): Promise<User> {
     const username = await this.generateUniqueUsername(
       userData.firstName,

@@ -9,8 +9,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { VagaApplicationsService } from './vaga-applications.service';
 import { ApplyDto } from './dto/apply.dto';
@@ -25,7 +23,7 @@ export class VagaApplicationsController {
   @Post('vagas/:slug/apply')
   @UseGuards(JwtAuthGuard)
   apply(
-    @Request() req,
+    @Request() req: { user: { id: string } },
     @Param('slug') slug: string,
     @Body() dto: ApplyDto,
   ) {
@@ -34,21 +32,39 @@ export class VagaApplicationsController {
 
   @Get('me/applications')
   @UseGuards(JwtAuthGuard)
-  listMine(@Request() req) {
+  listMine(@Request() req: { user: { id: string } }) {
     return this.applicationsService.listMine(req.user.id);
   }
 
+  /**
+   * Lists applications for a specific vaga.
+   * Accessible by the vaga creator or an admin — ownership is enforced in the service.
+   */
   @Get('vagas/:id/applications')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  listByVaga(@Param('id') id: string) {
-    return this.applicationsService.listByVaga(id);
+  @UseGuards(JwtAuthGuard)
+  listByVaga(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string; role: UserRole } },
+  ) {
+    return this.applicationsService.listByVaga(id, req.user.id, req.user.role);
   }
 
+  /**
+   * Updates the status of a specific application.
+   * Only the vaga creator or an admin can change application statuses.
+   */
   @Patch('applications/:id/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
-    return this.applicationsService.updateStatus(id, dto.status);
+  @UseGuards(JwtAuthGuard)
+  updateStatus(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string; role: UserRole } },
+    @Body() dto: UpdateStatusDto,
+  ) {
+    return this.applicationsService.updateStatus(
+      id,
+      dto.status,
+      req.user.id,
+      req.user.role,
+    );
   }
 }

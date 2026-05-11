@@ -13,7 +13,7 @@ import {
 } from './vaga-application.entity';
 import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { ApplyDto } from './dto/apply.dto';
 
 @Injectable()
@@ -62,7 +62,7 @@ export class VagaApplicationsService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
-    // Sincroniza campos vazios do perfil com os dados informados na candidatura.
+    // Sync empty profile fields with data provided in the application
     const profileUpdates: Partial<User> = {};
     if (!user.phone && dto.phone) profileUpdates.phone = dto.phone;
     if (!user.location && dto.location) profileUpdates.location = dto.location;
@@ -90,7 +90,7 @@ export class VagaApplicationsService {
     return this.applicationsRepository.save(application);
   }
 
-  async listMine(userId: string): Promise<any[]> {
+  async listMine(userId: string): Promise<unknown[]> {
     const apps = await this.applicationsRepository.find({
       where: { userId },
       relations: ['vaga'],
@@ -116,7 +116,24 @@ export class VagaApplicationsService {
     }));
   }
 
-  async listByVaga(vagaId: string): Promise<any[]> {
+  /**
+   * Lists applications for a vaga.
+   * Enforces ownership: only the vaga creator or an admin may view applications.
+   */
+  async listByVaga(
+    vagaId: string,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<unknown[]> {
+    const vaga = await this.vagasRepository.findOne({ where: { id: vagaId } });
+    if (!vaga) throw new NotFoundException('Vaga não encontrada.');
+
+    if (vaga.createdById !== actorId && actorRole !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Você não tem permissão para ver as candidaturas desta vaga.',
+      );
+    }
+
     const apps = await this.applicationsRepository.find({
       where: { vagaId },
       relations: ['user', 'cv'],
@@ -147,9 +164,32 @@ export class VagaApplicationsService {
     }));
   }
 
-  async updateStatus(id: string, status: ApplicationStatus): Promise<VagaApplication> {
-    const app = await this.applicationsRepository.findOne({ where: { id } });
+  /**
+   * Updates the status of an application.
+   * Enforces ownership: only the vaga creator or an admin may change status.
+   */
+  async updateStatus(
+    id: string,
+    status: ApplicationStatus,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<VagaApplication> {
+    const app = await this.applicationsRepository.findOne({
+      where: { id },
+      relations: ['vaga'],
+    });
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
+
+    if (
+      app.vaga &&
+      app.vaga.createdById !== actorId &&
+      actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Você não tem permissão para atualizar esta candidatura.',
+      );
+    }
+
     app.status = status;
     return this.applicationsRepository.save(app);
   }
