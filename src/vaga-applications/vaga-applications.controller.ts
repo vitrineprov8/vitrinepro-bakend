@@ -50,8 +50,12 @@ export class VagaApplicationsController {
   }
 
   /**
-   * Updates the status of a specific application.
-   * Only the vaga creator or an admin can change application statuses.
+   * Moves an application to a different pipeline stage.
+   *
+   * Body: { pipelineStage?: string, isRejected?: boolean }
+   * At least one field must be present.
+   *
+   * Only the vaga creator or an admin may call this endpoint.
    */
   @Patch('applications/:id/status')
   @UseGuards(JwtAuthGuard)
@@ -62,7 +66,7 @@ export class VagaApplicationsController {
   ) {
     return this.applicationsService.updateStatus(
       id,
-      dto.status,
+      dto,
       req.user.id,
       req.user.role,
     );

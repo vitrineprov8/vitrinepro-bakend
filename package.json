@@ -21,7 +21,11 @@
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed-cli.ts",
     "seed:clear": "ts-node -r tsconfig-paths/register src/seed/seed-cli-clear.ts",
     "seed:fake": "ts-node -r tsconfig-paths/register src/seed/fake-seed-cli.ts",
-    "seed:fake:clear": "ts-node -r tsconfig-paths/register src/seed/fake-seed-cli-clear.ts"
+    "seed:fake:clear": "ts-node -r tsconfig-paths/register src/seed/fake-seed-cli-clear.ts",
+    "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.994.0",

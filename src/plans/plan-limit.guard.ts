@@ -63,6 +63,11 @@ export class PlanLimitGuard implements CanActivate {
 
     const limit = PLAN_VAGA_LIMITS[effectivePlan];
 
+    // -1 means unlimited — bypass all limit checks (ENTERPRISE plan)
+    if (limit === -1) {
+      return true;
+    }
+
     // Count how many vagas this user has already created
     const current = await this.vagasRepository.count({
       where: { createdById: user.id },

@@ -1,16 +1,23 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Vaga } from './vaga.entity';
-import { User } from '../users/user.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
+import { Company } from '../companies/company.entity';
+import { TeamMember } from '../teams/team-member.entity';
 import { VagasService } from './vagas.service';
 import { VagasController } from './vagas.controller';
-import { PlansModule } from '../plans/plans.module';
+import { VagaPublishLedgerModule } from '../vaga-publish-ledger/vaga-publish-ledger.module';
+import { TeamsModule } from '../teams/teams.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Vaga, User, VagaApplication]),
-    PlansModule, // provides PlanLimitGuard for POST /vagas
+    TypeOrmModule.forFeature([Vaga, VagaApplication, Company, TeamMember]),
+    // Provides VagaPublishLedgerService for publish slot tracking.
+    // PlansModule (PlanLimitGuard) has been removed — limit enforcement
+    // now lives inside VagasService.publish(), not at the guard layer.
+    VagaPublishLedgerModule,
+    // TeamContextHelper for resolving quota owner and team-wide listings.
+    TeamsModule,
   ],
   providers: [VagasService],
   controllers: [VagasController],

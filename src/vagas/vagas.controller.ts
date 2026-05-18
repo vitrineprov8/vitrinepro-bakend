@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -10,19 +12,29 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { IsOptional, IsUUID } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../users/user.entity';
-import { PlanLimitGuard } from '../plans/plan-limit.guard';
+import { User, UserRole } from '../users/user.entity';
 import { VagasService } from './vagas.service';
+import { VagaPublishLedgerService } from '../vaga-publish-ledger/vaga-publish-ledger.service';
 import { CreateVagaDto } from './dto/create-vaga.dto';
 import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
 
+class AssignVagaDto {
+  @IsOptional()
+  @IsUUID()
+  userId: string | null;
+}
+
 @Controller('vagas')
 export class VagasController {
-  constructor(private readonly vagasService: VagasService) {}
+  constructor(
+    private readonly vagasService: VagasService,
+    private readonly vagaPublishLedgerService: VagaPublishLedgerService,
+  ) {}
 
   /** Public listing of published, non-expired vagas */
   @Get()
@@ -30,14 +42,28 @@ export class VagasController {
     return this.vagasService.listPublic(query);
   }
 
-  /** Returns only the vagas created by the authenticated user */
+  /** Returns the current user's publish slot usage for the active billing cycle */
+  @Get('me/usage')
+  @UseGuards(JwtAuthGuard)
+  getUsage(@Request() req: { user: User }) {
+    return this.vagaPublishLedgerService.getUsage(req.user);
+  }
+
+  /**
+   * Returns vagas visible to the authenticated user.
+   *
+   * - OWNER:     all vagas in their team (own + all members).
+   * - MANAGER:   all vagas in the team owner's scope.
+   * - RECRUITER: all vagas in the team owner's scope.
+   * - Solo user: only their own vagas.
+   */
   @Get('me')
   @UseGuards(JwtAuthGuard)
   listMine(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: User },
     @Query() query: ListVagasDto,
   ) {
-    return this.vagasService.listMine(req.user.id, query);
+    return this.vagasService.listMine(req.user, query);
   }
 
   /** Admin-only: see all vagas regardless of owner */
@@ -54,37 +80,98 @@ export class VagasController {
   }
 
   /**
-   * Creates a new vaga for the authenticated user.
-   * Requires an active paid plan (enforced by PlanLimitGuard).
-   * Admins bypass the plan limit.
+   * Creates a new vaga as a DRAFT.
+   *
+   * PlanLimitGuard has been intentionally removed from this endpoint — creating
+   * a draft is free and does not consume any plan slot.  The limit is enforced
+   * exclusively in POST /vagas/:id/publish.
    */
   @Post()
-  @UseGuards(JwtAuthGuard, PlanLimitGuard)
+  @UseGuards(JwtAuthGuard)
   create(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: User },
     @Body() dto: CreateVagaDto,
   ) {
-    return this.vagasService.create(req.user.id, dto);
+    return this.vagasService.create(req.user, dto);
   }
 
-  /** Updates a vaga — only the owner or an admin can modify it */
+  /**
+   * Publishes a vaga (DRAFT or CLOSED → PUBLISHED).
+   *
+   * This is the only way to move a vaga to PUBLISHED status.
+   * Consumes 1 slot from the TEAM OWNER's plan for the current billing cycle.
+   * MANAGER and RECRUITER publish against the owner's quota, not their own.
+   * Slot consumption is irreversible — closing or deleting the vaga does NOT
+   * return the slot.
+   *
+   * Re-publishing the same vaga in the same billing cycle does NOT consume
+   * an additional slot (idempotent via the ledger unique index).
+   *
+   * Returns 409 if the vaga is already PUBLISHED.
+   * Returns 403 with { code: 'PLAN_LIMIT_REACHED', used, limit, cycleEnd }
+   * if the plan slot limit is reached.
+   */
+  @Post(':id/publish')
+  @UseGuards(JwtAuthGuard)
+  publish(
+    @Param('id') id: string,
+    @Request() req: { user: User },
+  ) {
+    return this.vagasService.publish(id, req.user);
+  }
+
+  /**
+   * Unpublishes (closes) a vaga (PUBLISHED → CLOSED).
+   *
+   * Does NOT refund the publish slot — the slot is permanently spent for this
+   * billing cycle.  Use this to hide a vaga without deleting it.
+   */
+  @Post(':id/unpublish')
+  @UseGuards(JwtAuthGuard)
+  unpublish(
+    @Param('id') id: string,
+    @Request() req: { user: User },
+  ) {
+    return this.vagasService.unpublish(id, req.user);
+  }
+
+  /** Updates a vaga — owner, team manager, or admin can modify it.
+   *  Setting status to PUBLISHED via this endpoint is rejected (use /publish). */
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   update(
     @Param('id') id: string,
-    @Request() req: { user: { id: string; role: UserRole } },
+    @Request() req: { user: User },
     @Body() dto: UpdateVagaDto,
   ) {
-    return this.vagasService.update(id, dto, req.user.id, req.user.role);
+    return this.vagasService.update(id, dto, req.user);
   }
 
-  /** Deletes a vaga — only the owner or an admin can delete it */
+  /**
+   * Assigns or clears the responsible team member for a vaga.
+   * Body: { userId: string | null }
+   * - null → clear assignment
+   * - UUID → assign to that ACTIVE team member
+   */
+  @Patch(':id/assign')
+  @UseGuards(JwtAuthGuard)
+  assign(
+    @Param('id') id: string,
+    @Request() req: { user: User },
+    @Body() dto: AssignVagaDto,
+  ) {
+    return this.vagasService.assign(id, req.user.id, req.user.role, dto.userId ?? null);
+  }
+
+  /** Deletes a vaga — owner, team manager, or admin can delete it.
+   *  Ledger records are preserved (FK SET NULL) so the slot remains consumed. */
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
   remove(
     @Param('id') id: string,
-    @Request() req: { user: { id: string; role: UserRole } },
+    @Request() req: { user: User },
   ) {
-    return this.vagasService.remove(id, req.user.id, req.user.role);
+    return this.vagasService.remove(id, req.user);
   }
 }

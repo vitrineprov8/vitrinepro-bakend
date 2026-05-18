@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
+import { Company } from '../companies/company.entity';
 
 export enum VagaStatus {
   DRAFT = 'DRAFT',
@@ -69,6 +70,13 @@ export class Vaga {
   @Column({ type: 'enum', enum: VagaStatus, default: VagaStatus.DRAFT })
   status: VagaStatus;
 
+  /**
+   * Timestamp of the first publication of this vaga.
+   * Set by the publish endpoint; never reset even if the vaga is closed/re-published.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  publishedAt: Date | null;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   contactEmail: string | null;
 
@@ -78,6 +86,30 @@ export class Vaga {
 
   @Column({ type: 'uuid', nullable: true })
   createdById: string | null;
+
+  /**
+   * Optional client company associated with this vaga.
+   * Only available when the recruiter is on a TEAM or ENTERPRISE plan.
+   * SET NULL on company deletion so the vaga is preserved.
+   */
+  @ManyToOne(() => Company, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'companyId' })
+  company: Company | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  companyId: string | null;
+
+  /**
+   * Team member responsible for managing this vaga.
+   * Only valid when the recruiter is on a TEAM or ENTERPRISE plan.
+   * SET NULL on user deletion so the vaga is preserved.
+   */
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assignedToId' })
+  assignedTo: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  assignedToId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -7,11 +7,19 @@ import {
   ManyToOne,
   JoinColumn,
   Unique,
+  Index,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Vaga } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 
+/**
+ * @deprecated ApplicationStatus enum has been replaced by the free-form
+ * `pipelineStage` string + `isRejected` boolean as part of the customisable
+ * pipeline migration (1747000004000).  This enum is kept here only as a
+ * reference for the migration's down() reverse-mapping logic and must not be
+ * used in new code.
+ */
 export enum ApplicationStatus {
   PENDING = 'PENDING',
   REVIEWED = 'REVIEWED',
@@ -61,12 +69,25 @@ export class VagaApplication {
   @Column({ type: 'varchar', length: 255, nullable: true })
   snapshotLocation: string | null;
 
-  @Column({
-    type: 'enum',
-    enum: ApplicationStatus,
-    default: ApplicationStatus.PENDING,
-  })
-  status: ApplicationStatus;
+  /**
+   * Free-form stage identifier that references a stage `id` from the vaga
+   * owner's PipelineTemplate.  Defaults to 'para_analisar' (the first default
+   * stage).  Not a hard FK — the template is user-editable and stage ids can
+   * be custom strings.
+   *
+   * Indexed because the kanban board filters applications by (vagaId, pipelineStage).
+   */
+  @Index('IDX_vaga_applications_pipelineStage')
+  @Column({ type: 'varchar', length: 64, default: 'para_analisar' })
+  pipelineStage: string;
+
+  /**
+   * Denormalised flag for quick rejection queries without needing to join the
+   * pipeline template.  Set to true when the recruiter moves the applicant
+   * into the special 'rejected' stage.
+   */
+  @Column({ type: 'boolean', default: false })
+  isRejected: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

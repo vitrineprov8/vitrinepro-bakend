@@ -13,9 +13,9 @@ export enum UserRole {
 
 export enum PlanTier {
   FREE = 'FREE',
-  PERSONAL = 'PERSONAL',
-  HUNTER = 'HUNTER',
-  EMPRESARIAL = 'EMPRESARIAL',
+  RECRUITER = 'RECRUITER',
+  TEAM = 'TEAM',
+  ENTERPRISE = 'ENTERPRISE',
 }
 
 export enum PlanStatus {

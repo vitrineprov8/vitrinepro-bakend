@@ -7,14 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  ApplicationStatus,
-  VagaApplication,
-} from './vaga-application.entity';
+import { VagaApplication } from './vaga-application.entity';
 import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 import { User, UserRole } from '../users/user.entity';
 import { ApplyDto } from './dto/apply.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
 
 @Injectable()
 export class VagaApplicationsService {
@@ -84,7 +82,9 @@ export class VagaApplicationsService {
       snapshotEmail: dto.email,
       snapshotPhone: dto.phone ?? null,
       snapshotLocation: dto.location ?? null,
-      status: ApplicationStatus.PENDING,
+      // New pipeline fields — application starts at the first default stage
+      pipelineStage: 'para_analisar',
+      isRejected: false,
     });
 
     return this.applicationsRepository.save(application);
@@ -99,7 +99,8 @@ export class VagaApplicationsService {
 
     return apps.map((a) => ({
       id: a.id,
-      status: a.status,
+      pipelineStage: a.pipelineStage,
+      isRejected: a.isRejected,
       message: a.message,
       createdAt: a.createdAt,
       vaga: a.vaga
@@ -142,7 +143,8 @@ export class VagaApplicationsService {
 
     return apps.map((a) => ({
       id: a.id,
-      status: a.status,
+      pipelineStage: a.pipelineStage,
+      isRejected: a.isRejected,
       message: a.message,
       snapshotFullName: a.snapshotFullName,
       snapshotEmail: a.snapshotEmail,
@@ -165,15 +167,24 @@ export class VagaApplicationsService {
   }
 
   /**
-   * Updates the status of an application.
-   * Enforces ownership: only the vaga creator or an admin may change status.
+   * Updates the pipeline stage (and/or isRejected flag) of an application.
+   * Enforces ownership: only the vaga creator or an admin may change stage.
+   *
+   * At least one of dto.pipelineStage / dto.isRejected must be provided
+   * (enforced by the DTO validator and the guard below).
    */
   async updateStatus(
     id: string,
-    status: ApplicationStatus,
+    dto: UpdateStatusDto,
     actorId: string,
     actorRole: UserRole,
   ): Promise<VagaApplication> {
+    if (dto.pipelineStage === undefined && dto.isRejected === undefined) {
+      throw new BadRequestException(
+        'Informe pelo menos pipelineStage ou isRejected.',
+      );
+    }
+
     const app = await this.applicationsRepository.findOne({
       where: { id },
       relations: ['vaga'],
@@ -190,7 +201,13 @@ export class VagaApplicationsService {
       );
     }
 
-    app.status = status;
+    if (dto.pipelineStage !== undefined) {
+      app.pipelineStage = dto.pipelineStage;
+    }
+    if (dto.isRejected !== undefined) {
+      app.isRejected = dto.isRejected;
+    }
+
     return this.applicationsRepository.save(app);
   }
 }

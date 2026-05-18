@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -66,4 +67,12 @@ export class CreateVagaDto {
   @IsOptional()
   @IsEmail()
   contactEmail?: string;
+
+  /**
+   * Optional UUID of a Company owned by the user.
+   * Only honoured for TEAM/ENTERPRISE plans — validation happens in the service.
+   */
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 }

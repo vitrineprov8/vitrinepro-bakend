@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Coupon, DiscountType } from './coupon.entity';
 import { CouponRedemption, RedemptionStatus } from './coupon-redemption.entity';
 import { User, PlanTier, PlanStatus } from '../users/user.entity';
@@ -128,7 +128,7 @@ export class CouponsService {
 
   /**
    * Validates a redemption: marks VALIDATED, grants +30 days to coupon owner.
-   * If owner has no active plan, activates PERSONAL as minimum gift.
+   * If owner has no active plan, activates RECRUITER as minimum gift.
    */
   async validateRedemption(
     redemptionId: string,
@@ -162,10 +162,10 @@ export class CouponsService {
         // Extend from current expiry
         owner.planExpiresAt = new Date(owner.planExpiresAt.getTime() + thirtyDays);
       } else {
-        // No active plan — gift 30 days starting now, minimum PERSONAL
+        // No active plan — gift 30 days starting now, minimum RECRUITER
         owner.planStatus = PlanStatus.ACTIVE;
         if (owner.plan === PlanTier.FREE) {
-          owner.plan = PlanTier.PERSONAL;
+          owner.plan = PlanTier.RECRUITER;
         }
         owner.planExpiresAt = new Date(now.getTime() + thirtyDays);
       }
@@ -174,6 +174,27 @@ export class CouponsService {
     }
 
     return redemption;
+  }
+
+  /**
+   * Returns all active promotional coupons that are not owned by any user
+   * (i.e. admin-created campaigns). Only exposes code, discountType and
+   * discountValue — no ownership or redemption data is leaked.
+   */
+  async listPublicActive(): Promise<
+    Array<{ code: string; discountType: DiscountType; discountValue: number }>
+  > {
+    const coupons = await this.couponsRepository.find({
+      where: { isActive: true, ownerId: IsNull() },
+      select: ['code', 'discountType', 'discountValue'],
+      order: { createdAt: 'ASC' },
+    });
+
+    return coupons.map(({ code, discountType, discountValue }) => ({
+      code,
+      discountType,
+      discountValue,
+    }));
   }
 
   /** Rejects a redemption — no bonus granted */

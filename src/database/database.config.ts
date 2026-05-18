@@ -10,6 +10,11 @@ import { VagaApplication } from '../vaga-applications/vaga-application.entity';
 import { Subscription } from '../subscriptions/subscription.entity';
 import { Coupon } from '../coupons/coupon.entity';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { VagaPublishLedger } from '../vaga-publish-ledger/vaga-publish-ledger.entity';
+import { PipelineTemplate } from '../pipeline-templates/pipeline-template.entity';
+import { Company } from '../companies/company.entity';
+import { Team } from '../teams/team.entity';
+import { TeamMember } from '../teams/team-member.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -29,6 +34,11 @@ export const databaseConfig: TypeOrmModuleOptions = {
     Subscription,
     Coupon,
     CouponRedemption,
+    VagaPublishLedger,
+    PipelineTemplate,
+    Company,
+    Team,
+    TeamMember,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

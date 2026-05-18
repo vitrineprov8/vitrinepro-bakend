@@ -25,6 +25,17 @@ export class CouponsController {
   }
 
   /**
+   * Public endpoint — no authentication required.
+   * Returns active promotional coupons (ownerId IS NULL) so the frontend can
+   * display campaign banners (e.g. "Use FREE50 for 50% off").
+   * Only code, discountType and discountValue are exposed.
+   */
+  @Get('coupons/public/active')
+  listPublicActive() {
+    return this.couponsService.listPublicActive();
+  }
+
+  /**
    * Publicly validates a coupon code.
    * Uses OptionalJwtAuthGuard to detect self-use (user using their own referral code).
    */

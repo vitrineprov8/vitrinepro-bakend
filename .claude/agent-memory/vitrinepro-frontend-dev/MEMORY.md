@@ -1,0 +1,6 @@
+# Agent Memory — VitrinePro Frontend Dev
+
+- [Plan Tiers Renamed](project_plan_tiers_rename.md) — FREE/RECRUITER/TEAM/ENTERPRISE; old names PERSONAL/HUNTER/EMPRESARIAL fully removed as of 2026-05-15
+- [Vaga Publish Anti-Abuse Flow](project_vaga_publish_flow.md) — New publish flow: POST /vagas/:id/publish, PLAN_LIMIT_REACHED 403 handling, unpublish endpoint
+- [Team & Clients UI (Task #11)](project_team_clients_ui.md) — TeamMembersList, ClientsList, ClientEditorModal; VagaEditor/VagasAdminList extended; companies/team/vagasAssignment added to api.ts
+- [Dashboard KPIs Extended (Task #12)](project_kpis_dashboard_task12.md) — VagasMetrics 5 cards; PipelineOverviewCard + RecentActivityFeed for TEAM/ENTERPRISE; client-side aggregation of 10 vagas
