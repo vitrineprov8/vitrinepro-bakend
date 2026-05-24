@@ -96,6 +96,54 @@ export class TeamsService {
   }
 
   /**
+   * Returns ALL teams accessible to the user: the one they own (if any) +
+   * every team they are an ACTIVE member of. Used by the multi-context
+   * switcher when a recruiter has been invited by multiple companies.
+   *
+   * Each entry includes the user's role inside that team.
+   */
+  async listAccessibleTeams(
+    user: User,
+  ): Promise<Array<{ id: string; name: string; ownerId: string; role: TeamRole }>> {
+    const results = new Map<string, { id: string; name: string; ownerId: string; role: TeamRole }>();
+
+    // Owned team
+    const ownedTeam = await this.teamsRepository.findOne({
+      where: { ownerId: user.id },
+    });
+    if (ownedTeam) {
+      results.set(ownedTeam.id, {
+        id: ownedTeam.id,
+        name: ownedTeam.name,
+        ownerId: ownedTeam.ownerId,
+        role: TeamRole.OWNER,
+      });
+    }
+
+    // Teams where user is an ACTIVE member (non-OWNER row)
+    const memberships = await this.teamMembersRepository
+      .createQueryBuilder('tm')
+      .innerJoinAndSelect('tm.team', 'team')
+      .where('tm.userId = :userId', { userId: user.id })
+      .andWhere('tm.status = :status', { status: TeamMemberStatus.ACTIVE })
+      .andWhere('tm.role != :ownerRole', { ownerRole: TeamRole.OWNER })
+      .getMany();
+
+    for (const m of memberships) {
+      if (m.team && !results.has(m.team.id)) {
+        results.set(m.team.id, {
+          id: m.team.id,
+          name: m.team.name,
+          ownerId: m.team.ownerId,
+          role: m.role,
+        });
+      }
+    }
+
+    return Array.from(results.values());
+  }
+
+  /**
    * Invites a new member to the user's team by email.
    *
    * Authorisation: only OWNER or MANAGER members can invite.

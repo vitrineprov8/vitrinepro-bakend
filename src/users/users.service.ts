@@ -37,6 +37,9 @@ export class UsersService {
     oauthId?: string | null;
     avatarUrl?: string | null;
     referralCode?: string | null;
+    isCompany?: boolean;
+    companyName?: string | null;
+    companyIndustry?: string | null;
   }): Promise<User> {
     const username = await this.generateUniqueUsername(
       userData.firstName,

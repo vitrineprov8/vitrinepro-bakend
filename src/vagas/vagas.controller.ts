@@ -22,6 +22,7 @@ import { VagaPublishLedgerService } from '../vaga-publish-ledger/vaga-publish-le
 import { CreateVagaDto } from './dto/create-vaga.dto';
 import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
+import { RadarQueryDto } from './dto/radar-query.dto';
 
 class AssignVagaDto {
   @IsOptional()
@@ -72,6 +73,18 @@ export class VagasController {
   @Roles(UserRole.ADMIN)
   listAdmin(@Query() query: ListVagasDto) {
     return this.vagasService.listAdmin(query);
+  }
+
+  /**
+   * Public radar — paginated, filterable list of PUBLISHED vagas.
+   * No auth required. Supports: q, segment, city, type, workMode, salaryMin, order.
+   *
+   * IMPORTANT: this route must remain ABOVE @Get(':slug') so Express does not
+   * treat "radar" as a slug value.
+   */
+  @Get('radar')
+  radar(@Query() query: RadarQueryDto) {
+    return this.vagasService.listRadar(query);
   }
 
   @Get(':slug')

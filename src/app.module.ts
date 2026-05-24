@@ -23,6 +23,10 @@ import { CouponsModule } from './coupons/coupons.module';
 import { PipelineTemplatesModule } from './pipeline-templates/pipeline-templates.module';
 import { CompaniesModule } from './companies/companies.module';
 import { TeamsModule } from './teams/teams.module';
+import { SavedVagasModule } from './saved-vagas/saved-vagas.module';
+import { SavedFiltersModule } from './saved-filters/saved-filters.module';
+import { HunterInterestsModule } from './hunter-interests/hunter-interests.module';
+import { ProcessShareModule } from './process-share/process-share.module';
 
 @Module({
   imports: [
@@ -46,6 +50,10 @@ import { TeamsModule } from './teams/teams.module';
     PipelineTemplatesModule,
     CompaniesModule,
     TeamsModule,
+    SavedVagasModule,
+    SavedFiltersModule,
+    HunterInterestsModule,
+    ProcessShareModule,
     // SeedModule is only active outside production to prevent accidental data
     // insertion or exposure of unauthenticated mutation endpoints in prod.
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),

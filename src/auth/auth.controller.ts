@@ -18,6 +18,9 @@ export class AuthController {
       firstName: string;
       lastName: string;
       password: string;
+      isCompany?: boolean;
+      companyName?: string;
+      companyIndustry?: string;
     },
   ) {
     return this.authService.register(registerDto);

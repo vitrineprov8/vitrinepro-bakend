@@ -26,10 +26,19 @@ export class AuthService {
     firstName: string;
     lastName: string;
     password: string;
+    isCompany?: boolean;
+    companyName?: string;
+    companyIndustry?: string;
   }) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new BadRequestException('El email ya está registrado');
+    }
+
+    if (registerDto.isCompany && !registerDto.companyName?.trim()) {
+      throw new BadRequestException(
+        'O nome da empresa é obrigatório para contas empresariais.',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
@@ -40,6 +49,9 @@ export class AuthService {
       password: hashedPassword,
       authProvider: 'local',
       referralCode,
+      isCompany: registerDto.isCompany ?? false,
+      companyName: registerDto.isCompany ? (registerDto.companyName ?? null) : null,
+      companyIndustry: registerDto.companyIndustry ?? null,
     });
 
     await this.tagsService.createDefaultTagsForUser(user.id);

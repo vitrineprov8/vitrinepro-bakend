@@ -17,6 +17,10 @@ import { PipelineTemplate } from './pipeline-templates/pipeline-template.entity'
 import { Company } from './companies/company.entity';
 import { Team } from './teams/team.entity';
 import { TeamMember } from './teams/team-member.entity';
+import { SavedVaga } from './saved-vagas/saved-vaga.entity';
+import { SavedFilter } from './saved-filters/saved-filter.entity';
+import { HunterInterest } from './hunter-interests/hunter-interest.entity';
+import { ProcessShareLink } from './process-share/process-share-link.entity';
 
 dotenv.config();
 
@@ -43,6 +47,10 @@ export const AppDataSource = new DataSource({
     Company,
     Team,
     TeamMember,
+    SavedVaga,
+    SavedFilter,
+    HunterInterest,
+    ProcessShareLink,
   ],
   migrations: [
     'src/migrations/*.ts',

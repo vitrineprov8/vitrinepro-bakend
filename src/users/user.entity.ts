@@ -113,6 +113,32 @@ export class User {
   @Column({ type: 'varchar', length: 16, unique: true, nullable: true })
   referralCode: string | null;
 
+  // ── Company account fields ─────────────────────────────────────────────────
+  /** When true this account represents a company, not an individual professional. */
+  @Column({ type: 'boolean', default: false })
+  isCompany: boolean;
+
+  /** Display name of the company. Required when isCompany = true. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  companyName: string | null;
+
+  /** Industry / sector of the company (free-form). */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  companyIndustry: string | null;
+
+  /** URL of the company logo stored in R2. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  companyLogoUrl: string | null;
+
+  // ── Hunter multi-context ───────────────────────────────────────────────────
+  /**
+   * When set, the user is acting on behalf of this team (identified by the
+   * team's id).  Null means the user is in their personal context.
+   * Validated by PATCH /me/active-context — must be a team the user belongs to.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  activeContextTeamId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

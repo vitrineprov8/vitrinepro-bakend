@@ -29,6 +29,20 @@ export enum VagaWorkMode {
   ONSITE = 'ONSITE',
 }
 
+export enum VagaSegment {
+  COMERCIO_VENDAS = 'COMERCIO_VENDAS',
+  LOGISTICA_TRANSPORTE = 'LOGISTICA_TRANSPORTE',
+  FINANCAS_CONTABILIDADE = 'FINANCAS_CONTABILIDADE',
+  ADMINISTRATIVO = 'ADMINISTRATIVO',
+  TECNOLOGIA = 'TECNOLOGIA',
+  RH = 'RH',
+  SAUDE = 'SAUDE',
+  EDUCACAO = 'EDUCACAO',
+  MARKETING = 'MARKETING',
+  JURIDICO = 'JURIDICO',
+  OUTROS = 'OUTROS',
+}
+
 @Entity('vagas')
 export class Vaga {
   @PrimaryGeneratedColumn('uuid')
@@ -79,6 +93,24 @@ export class Vaga {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   contactEmail: string | null;
+
+  /**
+   * Optional segment / area of activity for this vaga.
+   * Allows filtering on the public Radar endpoint.
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  segment: VagaSegment | null;
+
+  /**
+   * When true, the vaga accepts interest from external Hunter recruiters.
+   * The hunter contact phone is shown to matched hunters.
+   */
+  @Column({ type: 'boolean', default: false })
+  allowHunters: boolean;
+
+  /** WhatsApp / phone contact shown to hunters when allowHunters = true. */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  hunterContactPhone: string | null;
 
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })

@@ -1,0 +1,3 @@
+- [Phase 1 Refactor](project_phase1_refactor.md) — Company accounts, Vaga segments/hunters, SavedVaga, SavedFilter, Radar endpoint added 2026-05-23
+- [Phase 2 Refactor](project_phase2_refactor.md) — HunterInterest module, activeContextTeamId, vaga context ownership, DELETE /applications/:id added 2026-05-23
+- [Phase 3 Refactor](project_phase3_refactor.md) — Application notes/history, ProcessShareLink, PDF via pdfkit, 7 new endpoints added 2026-05-23

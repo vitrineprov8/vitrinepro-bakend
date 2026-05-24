@@ -15,6 +15,10 @@ import { PipelineTemplate } from '../pipeline-templates/pipeline-template.entity
 import { Company } from '../companies/company.entity';
 import { Team } from '../teams/team.entity';
 import { TeamMember } from '../teams/team-member.entity';
+import { SavedVaga } from '../saved-vagas/saved-vaga.entity';
+import { SavedFilter } from '../saved-filters/saved-filter.entity';
+import { HunterInterest } from '../hunter-interests/hunter-interest.entity';
+import { ProcessShareLink } from '../process-share/process-share-link.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -39,6 +43,10 @@ export const databaseConfig: TypeOrmModuleOptions = {
     Company,
     Team,
     TeamMember,
+    SavedVaga,
+    SavedFilter,
+    HunterInterest,
+    ProcessShareLink,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

@@ -8,18 +8,20 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import slugify from 'slugify';
-import { Vaga, VagaStatus } from './vaga.entity';
+import { Vaga, VagaSegment, VagaStatus } from './vaga.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
 import { User, UserRole, PlanTier, PlanStatus } from '../users/user.entity';
 import { VagaPublishLedger } from '../vaga-publish-ledger/vaga-publish-ledger.entity';
 import { getCurrentCycle } from '../vaga-publish-ledger/cycle.util';
 import { PLAN_VAGA_LIMITS } from '../plans/plan-limits';
 import { Company } from '../companies/company.entity';
+import { Team } from '../teams/team.entity';
 import { TeamMember, TeamMemberStatus, TeamRole } from '../teams/team-member.entity';
 import { TeamContextHelper } from '../teams/team-context.helper';
 import { CreateVagaDto } from './dto/create-vaga.dto';
 import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
+import { RadarQueryDto } from './dto/radar-query.dto';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
 
 type VagaWithCount = Vaga & { applicationsCount: number };
@@ -33,6 +35,8 @@ export class VagasService {
     private vagaApplicationsRepository: Repository<VagaApplication>,
     @InjectRepository(Company)
     private companiesRepository: Repository<Company>,
+    @InjectRepository(Team)
+    private teamsRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMembersRepository: Repository<TeamMember>,
     @InjectDataSource()
@@ -86,6 +90,68 @@ export class VagasService {
   }
 
   /**
+   * Radar — paginated public search for PUBLISHED vagas.
+   *
+   * Identical to listPublic but with additional filter options:
+   *   - segment: industry vertical
+   *   - city:    substring match on vaga.location
+   *   - salaryMin: inclusive minimum on salaryMin column
+   *   - order:   recent (default) | relevance (title match boost via CASE)
+   *
+   * Never returns un-published or expired vagas.
+   */
+  async listRadar(dto: RadarQueryDto) {
+    const {
+      page = 1,
+      limit = 10,
+      q,
+      segment,
+      city,
+      type,
+      workMode,
+      salaryMin,
+      order = 'recent',
+    } = dto;
+
+    const qb = this.vagasRepository
+      .createQueryBuilder('vaga')
+      .where('vaga.status = :status', { status: VagaStatus.PUBLISHED })
+      .andWhere('(vaga.deadline IS NULL OR vaga.deadline > NOW())');
+
+    if (q) {
+      qb.andWhere(
+        '(LOWER(vaga.title) LIKE :q OR LOWER(vaga.description) LIKE :q)',
+        { q: `%${q.toLowerCase()}%` },
+      );
+    }
+    if (segment) qb.andWhere('vaga.segment = :segment', { segment });
+    if (city) {
+      qb.andWhere('LOWER(vaga.location) LIKE :city', {
+        city: `%${city.toLowerCase()}%`,
+      });
+    }
+    if (type) qb.andWhere('vaga.type = :type', { type });
+    if (workMode) qb.andWhere('vaga.workMode = :workMode', { workMode });
+    if (salaryMin !== undefined) {
+      qb.andWhere('vaga.salaryMin >= :salaryMin', { salaryMin });
+    }
+
+    if (order === 'relevance' && q) {
+      // Title matches rank higher than description-only matches
+      qb.orderBy(
+        `CASE WHEN LOWER(vaga.title) LIKE :qExact THEN 0 ELSE 1 END`,
+        'ASC',
+      )
+        .setParameter('qExact', `%${q.toLowerCase()}%`)
+        .addOrderBy('vaga.publishedAt', 'DESC');
+    } else {
+      qb.orderBy('vaga.publishedAt', 'DESC');
+    }
+
+    return paginate(qb, page, limit);
+  }
+
+  /**
    * Lists vagas visible to the authenticated user.
    *
    * - OWNER:   all vagas created by anyone in their team (owner + all members).
@@ -100,8 +166,12 @@ export class VagasService {
     const ctx = await this.teamContextHelper.getTeamContext(user);
     const ownerId = ctx.quotaOwner.id;
 
-    // Collect all userIds in scope: the quota owner's team (owner + active members)
-    const teamUserIds = await this.teamContextHelper.getTeamUserIds(ownerId);
+    // In personal context (ctx.team === null) list only the acting user's own vagas,
+    // even if they happen to own a team — personal toggle must isolate their scope.
+    // In team context, expand to all team member ids under the quota owner.
+    const teamUserIds = ctx.team
+      ? await this.teamContextHelper.getTeamUserIds(ownerId)
+      : [user.id];
 
     const qb = this.vagasRepository
       .createQueryBuilder('vaga')
@@ -168,6 +238,14 @@ export class VagasService {
    * Company validation: the company must belong to the QUOTA OWNER (the team
    * owner), not necessarily to the actor directly. This allows MANAGER and
    * RECRUITER to attach the owner's companies to their vagas.
+   *
+   * Active context (activeContextTeamId):
+   *   When the user has an active team context, the vaga is implicitly created
+   *   under the team's owner scope.  If no companyId is provided in the DTO,
+   *   we auto-resolve to the first company owned by the team owner so the vaga
+   *   appears correctly in the team's pipeline.  `createdById` always stays as
+   *   `user.id` (the real actor), but `assignedToId` is set to the actor so
+   *   the vaga appears in their pipeline within the team listing.
    */
   async create(user: User, dto: CreateVagaDto): Promise<Vaga> {
     const ctx = await this.teamContextHelper.getTeamContext(user);
@@ -175,8 +253,26 @@ export class VagasService {
 
     const slug = await this.generateUniqueSlug(dto.title);
 
+    // ── Active context: auto-derive company from team owner when no companyId given ──
+    let contextAutoCompanyId: string | null = null;
+    if (user.activeContextTeamId && !dto.companyId) {
+      const activeTeam = await this.teamsRepository.findOne({
+        where: { id: user.activeContextTeamId },
+        select: ['id', 'ownerId'],
+      });
+      if (activeTeam) {
+        // Find first company of the team owner to associate with this vaga
+        const ownerCompany = await this.companiesRepository.findOne({
+          where: { ownerId: activeTeam.ownerId },
+          select: ['id'],
+          order: { createdAt: 'ASC' },
+        });
+        contextAutoCompanyId = ownerCompany?.id ?? null;
+      }
+    }
+
     // Validate companyId — must belong to the quota owner's scope
-    let resolvedCompanyId: string | null = null;
+    let resolvedCompanyId: string | null = contextAutoCompanyId;
     if (dto.companyId) {
       const company = await this.companiesRepository.findOne({
         where: { id: dto.companyId },
@@ -194,6 +290,10 @@ export class VagasService {
       }
       resolvedCompanyId = dto.companyId;
     }
+
+    // When acting in team context, set assignedToId to the actor so the vaga
+    // shows up in their personal pipeline view within the team listing.
+    const assignedToId = user.activeContextTeamId ? user.id : null;
 
     const vaga = this.vagasRepository.create({
       title: dto.title,
@@ -215,6 +315,10 @@ export class VagasService {
       // Author is always the actual actor — quota owner is only for billing
       createdById: user.id,
       companyId: resolvedCompanyId,
+      assignedToId,
+      segment: dto.segment ?? null,
+      allowHunters: dto.allowHunters ?? false,
+      hunterContactPhone: dto.hunterContactPhone ?? null,
     });
 
     return this.vagasRepository.save(vaga);
@@ -289,6 +393,9 @@ export class VagasService {
       status: dto.status ?? vaga.status,
       contactEmail: dto.contactEmail !== undefined ? dto.contactEmail : vaga.contactEmail,
       companyId: resolvedCompanyId,
+      segment: dto.segment !== undefined ? (dto.segment as VagaSegment | undefined) ?? null : vaga.segment,
+      allowHunters: dto.allowHunters !== undefined ? dto.allowHunters : vaga.allowHunters,
+      hunterContactPhone: dto.hunterContactPhone !== undefined ? dto.hunterContactPhone ?? null : vaga.hunterContactPhone,
     });
 
     return this.vagasRepository.save(vaga);
@@ -423,13 +530,18 @@ export class VagasService {
             .getCount();
 
           if (used >= limit) {
+            // Personalise the message depending on whether this is a personal or team context.
+            const limitMessage = ctx.team
+              ? 'O time atingiu o limite de vagas publicadas neste ciclo. Faça upgrade para continuar.'
+              : effectivePlan === PlanTier.FREE
+                ? 'Contrate um plano para publicar vagas pessoais.'
+                : 'Você atingiu o limite de vagas publicadas neste ciclo. Faça upgrade para continuar.';
             throw new ForbiddenException({
               code: 'PLAN_LIMIT_REACHED',
               used,
               limit,
               cycleEnd: cycle.end,
-              message:
-                'O time atingiu o limite de vagas publicadas neste ciclo. Faça upgrade para continuar.',
+              message: limitMessage,
             });
           }
 
@@ -491,14 +603,27 @@ export class VagasService {
    * Authorization is granted when ANY of the following is true:
    *  1. actor.role === ADMIN
    *  2. vaga.createdById === actor.id  (direct author)
-   *  3. actor is an ACTIVE OWNER or MANAGER in the team whose owner created the vaga
+   *  3. The vaga was created in team context (companyId !== null OR assignedToId !== null)
+   *     AND the actor is an ACTIVE OWNER or MANAGER in the team whose owner created the vaga
    *     (team-level delegation for cross-member vaga management)
+   *
+   * Rule 3 is intentionally gated on "team context vaga" (companyId or assignedToId set).
+   * A vaga created in personal context (companyId === null AND assignedToId === null) is
+   * strictly private to its author — no team-level delegation applies, even if the author
+   * is a member or owner of a team.
    *
    * Throws ForbiddenException otherwise.
    */
   private async assertVagaAccess(vaga: Vaga, actor: User): Promise<void> {
     if (actor.role === UserRole.ADMIN) return;
     if (vaga.createdById === actor.id) return;
+
+    // Personal-context vagas are only accessible by their author (or admin above).
+    // companyId === null AND assignedToId === null is the fingerprint of a personal vaga.
+    const isPersonalVaga = vaga.companyId === null && vaga.assignedToId === null;
+    if (isPersonalVaga) {
+      throw new ForbiddenException('Você não tem permissão para modificar esta vaga.');
+    }
 
     // Check team-level access: actor must be OWNER or MANAGER in the team
     // whose owner authored this vaga
@@ -530,6 +655,9 @@ export class VagasService {
   /**
    * Same as assertVagaAccess but runs inside an existing transaction manager.
    * Used within VagasService.publish() to avoid opening a nested transaction.
+   *
+   * Mirrors the personal-vaga guard: companyId === null AND assignedToId === null
+   * means the vaga was created in personal context and only its author (or admin) may act on it.
    */
   private async assertVagaAccessInTransaction(
     vaga: Vaga,
@@ -538,6 +666,12 @@ export class VagasService {
   ): Promise<void> {
     if (actor.role === UserRole.ADMIN) return;
     if (vaga.createdById === actor.id) return;
+
+    // Personal-context vagas are strictly private to their author.
+    const isPersonalVaga = vaga.companyId === null && vaga.assignedToId === null;
+    if (isPersonalVaga) {
+      throw new ForbiddenException('Você não tem permissão para modificar esta vaga.');
+    }
 
     const tmRepo = manager.getRepository(TeamMember);
 

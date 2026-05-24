@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -11,7 +12,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { VagaStatus, VagaType, VagaWorkMode } from '../vaga.entity';
+import { VagaSegment, VagaStatus, VagaType, VagaWorkMode } from '../vaga.entity';
 
 export class CreateVagaDto {
   @IsNotEmpty()
@@ -75,4 +76,20 @@ export class CreateVagaDto {
   @IsOptional()
   @IsUUID()
   companyId?: string;
+
+  /** Optional segment for filtering on the Radar. */
+  @IsOptional()
+  @IsEnum(VagaSegment)
+  segment?: VagaSegment;
+
+  /** Whether this vaga accepts external Hunter recruiters. */
+  @IsOptional()
+  @IsBoolean()
+  allowHunters?: boolean;
+
+  /** WhatsApp / phone contact revealed to matched hunters. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  hunterContactPhone?: string;
 }

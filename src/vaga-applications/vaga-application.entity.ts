@@ -89,6 +89,50 @@ export class VagaApplication {
   @Column({ type: 'boolean', default: false })
   isRejected: boolean;
 
+  // ── Phase 3 enrichment fields ───────────────────────────────────────────────
+
+  /**
+   * General score given by the recruiter.  0.0–10.0 with one decimal place.
+   * Stored as DECIMAL(3,1).  Null means not yet rated.
+   */
+  @Column({ type: 'decimal', precision: 3, scale: 1, nullable: true })
+  generalScore: number | null;
+
+  /**
+   * Free-text general note from the recruiter about this candidate.
+   */
+  @Column({ type: 'text', nullable: true })
+  generalNote: string | null;
+
+  /**
+   * Append-only log of pipeline stage transitions.
+   * Format: Array<{ stage: string; enteredAt: string; byUserId: string; note?: string }>
+   * Most-recent entry is last; controller reverses on GET /history.
+   */
+  @Index('IDX_vaga_applications_stageHistory_gin')
+  @Column({ type: 'jsonb', default: [] })
+  stageHistory: Array<{
+    stage: string;
+    enteredAt: string;
+    byUserId: string;
+    note?: string;
+  }>;
+
+  /**
+   * Recruiter notes/ratings keyed by stage identifier.
+   * Format: Record<string, { observacoes: string; nota: number | null; updatedAt: string; byUserId: string }>
+   */
+  @Column({ type: 'jsonb', default: {} })
+  stageNotes: Record<
+    string,
+    {
+      observacoes: string;
+      nota: number | null;
+      updatedAt: string;
+      byUserId: string;
+    }
+  >;
+
   @CreateDateColumn()
   createdAt: Date;
 

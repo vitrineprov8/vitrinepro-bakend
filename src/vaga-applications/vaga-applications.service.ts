@@ -13,6 +13,8 @@ import { CV } from '../cv/cv.entity';
 import { User, UserRole } from '../users/user.entity';
 import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { UpdateGeneralDto } from './dto/update-general.dto';
+import { UpdateStageNotesDto } from './dto/update-stage-notes.dto';
 
 @Injectable()
 export class VagaApplicationsService {
@@ -59,6 +61,13 @@ export class VagaApplicationsService {
 
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    // Company accounts cannot apply to vagas as candidates
+    if (user.isCompany) {
+      throw new ForbiddenException(
+        'Contas empresariais não podem se candidatar a vagas. Use uma conta de profissional.',
+      );
+    }
 
     // Sync empty profile fields with data provided in the application
     const profileUpdates: Partial<User> = {};
@@ -167,6 +176,30 @@ export class VagaApplicationsService {
   }
 
   /**
+   * Removes an application — only the applicant (application.userId) may call this.
+   * Hard delete: the application row is permanently removed.
+   * Returns void; controller responds 204.
+   */
+  async removeApplication(applicationId: string, actorId: string): Promise<void> {
+    const app = await this.applicationsRepository.findOne({
+      where: { id: applicationId },
+      select: ['id', 'userId'],
+    });
+
+    if (!app) {
+      throw new NotFoundException('Candidatura não encontrada.');
+    }
+
+    if (app.userId !== actorId) {
+      throw new ForbiddenException(
+        'Você não tem permissão para remover esta candidatura.',
+      );
+    }
+
+    await this.applicationsRepository.remove(app);
+  }
+
+  /**
    * Updates the pipeline stage (and/or isRejected flag) of an application.
    * Enforces ownership: only the vaga creator or an admin may change stage.
    *
@@ -202,6 +235,15 @@ export class VagaApplicationsService {
     }
 
     if (dto.pipelineStage !== undefined) {
+      // Only append to stageHistory when the stage actually changes
+      if (app.pipelineStage !== dto.pipelineStage) {
+        const historyEntry: VagaApplication['stageHistory'][number] = {
+          stage: dto.pipelineStage,
+          enteredAt: new Date().toISOString(),
+          byUserId: actorId,
+        };
+        app.stageHistory = [...(app.stageHistory ?? []), historyEntry];
+      }
       app.pipelineStage = dto.pipelineStage;
     }
     if (dto.isRejected !== undefined) {
@@ -209,5 +251,146 @@ export class VagaApplicationsService {
     }
 
     return this.applicationsRepository.save(app);
+  }
+
+  // ── Phase 3: general score / note ─────────────────────────────────────────
+
+  /**
+   * Updates the recruiter's general evaluation fields.
+   * Only the vaga creator or admin may call this.
+   */
+  async updateGeneral(
+    id: string,
+    dto: UpdateGeneralDto,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<VagaApplication> {
+    if (dto.generalScore === undefined && dto.generalNote === undefined) {
+      throw new BadRequestException(
+        'Informe pelo menos generalScore ou generalNote.',
+      );
+    }
+
+    const app = await this.applicationsRepository.findOne({
+      where: { id },
+      relations: ['vaga'],
+    });
+    if (!app) throw new NotFoundException('Candidatura não encontrada.');
+
+    if (
+      app.vaga &&
+      app.vaga.createdById !== actorId &&
+      actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Você não tem permissão para avaliar esta candidatura.',
+      );
+    }
+
+    if (dto.generalScore !== undefined) app.generalScore = dto.generalScore;
+    if (dto.generalNote !== undefined) app.generalNote = dto.generalNote;
+
+    return this.applicationsRepository.save(app);
+  }
+
+  // ── Phase 3: per-stage notes ──────────────────────────────────────────────
+
+  /**
+   * Creates or merges notes for a specific pipeline stage.
+   * Stored in stageNotes[stageKey] as { observacoes, nota, updatedAt, byUserId }.
+   */
+  async updateStageNotes(
+    id: string,
+    stageKey: string,
+    dto: UpdateStageNotesDto,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<VagaApplication> {
+    const app = await this.applicationsRepository.findOne({
+      where: { id },
+      relations: ['vaga'],
+    });
+    if (!app) throw new NotFoundException('Candidatura não encontrada.');
+
+    if (
+      app.vaga &&
+      app.vaga.createdById !== actorId &&
+      actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Você não tem permissão para anotar nesta candidatura.',
+      );
+    }
+
+    const existing = app.stageNotes?.[stageKey] ?? {
+      observacoes: '',
+      nota: null,
+      updatedAt: new Date().toISOString(),
+      byUserId: actorId,
+    };
+
+    app.stageNotes = {
+      ...(app.stageNotes ?? {}),
+      [stageKey]: {
+        observacoes:
+          dto.observacoes !== undefined ? dto.observacoes : existing.observacoes,
+        nota: dto.nota !== undefined ? dto.nota : existing.nota,
+        updatedAt: new Date().toISOString(),
+        byUserId: actorId,
+      },
+    };
+
+    return this.applicationsRepository.save(app);
+  }
+
+  // ── Phase 3: stage history ────────────────────────────────────────────────
+
+  /**
+   * Returns stageHistory in reverse-chronological order, enriched with the
+   * author's full name resolved via a single bulk query.
+   */
+  async getHistory(
+    id: string,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<unknown[]> {
+    const app = await this.applicationsRepository.findOne({
+      where: { id },
+      relations: ['vaga'],
+      select: ['id', 'stageHistory', 'vaga'],
+    });
+    if (!app) throw new NotFoundException('Candidatura não encontrada.');
+
+    if (
+      app.vaga &&
+      app.vaga.createdById !== actorId &&
+      actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Você não tem permissão para ver o histórico desta candidatura.',
+      );
+    }
+
+    const history = app.stageHistory ?? [];
+    const userIds = [...new Set(history.map((e) => e.byUserId))];
+
+    let authorMap = new Map<string, string>();
+    if (userIds.length > 0) {
+      const authors = await this.usersRepository.find({
+        where: userIds.map((uid) => ({ id: uid })),
+        select: ['id', 'firstName', 'lastName'],
+      });
+      authorMap = new Map(
+        authors.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+      );
+    }
+
+    return [...history].reverse().map((entry) => ({
+      stage: entry.stage,
+      enteredAt: entry.enteredAt,
+      byUserId: entry.byUserId,
+      byUserName: authorMap.get(entry.byUserId) ?? 'Recrutador',
+      note: entry.note ?? null,
+    }));
   }
 }

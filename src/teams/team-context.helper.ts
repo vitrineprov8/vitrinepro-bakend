@@ -57,32 +57,45 @@ export class TeamContextHelper {
   ) {}
 
   /**
-   * Resolves the full team context for the given user.
+   * Resolves the full team context for the given user, honouring
+   * `user.activeContextTeamId` (the ContextSwitcher toggle).
    *
    * Algorithm:
-   *  1. Check if the user OWNS a team → role = OWNER, quotaOwner = user.
-   *  2. Check if the user is an ACTIVE member of any team → role = their role,
-   *     quotaOwner = the team owner's User record.
-   *  3. Neither → team = null, role = null, quotaOwner = user.
+   *  A. If `activeContextTeamId` is null → PERSONAL context.
+   *     Return { team: null, role: null, quotaOwner: user } immediately,
+   *     regardless of whether the user owns or belongs to a team.
+   *     This is the "Pessoal" toggle state.
+   *
+   *  B. If `activeContextTeamId` is set → TEAM context for that specific team.
+   *     1. Check if the user OWNS that team → role = OWNER, quotaOwner = user.
+   *     2. Check if the user is an ACTIVE member of that specific team →
+   *        role = their role, quotaOwner = the team owner's User record.
+   *     3. If neither (stale/invalid teamId) → fall back to solo context.
    */
   async getTeamContext(user: User): Promise<TeamContext> {
-    // 1. Is this user the OWNER of a team?
+    // A. Personal context — honour the ContextSwitcher explicitly.
+    if (!user.activeContextTeamId) {
+      return { team: null, role: null, quotaOwner: user };
+    }
+
+    const targetTeamId = user.activeContextTeamId;
+
+    // B1. Is this user the OWNER of that specific team?
     const ownedTeam = await this.teamsRepository.findOne({
-      where: { ownerId: user.id },
+      where: { id: targetTeamId, ownerId: user.id },
     });
     if (ownedTeam) {
       return { team: ownedTeam, role: TeamRole.OWNER, quotaOwner: user };
     }
 
-    // 2. Is this user an ACTIVE member of someone else's team?
+    // B2. Is this user an ACTIVE member of that specific team?
     const membership = await this.teamMembersRepository
       .createQueryBuilder('tm')
       .innerJoinAndSelect('tm.team', 'team')
       .innerJoinAndSelect('team.owner', 'owner')
       .where('tm.userId = :userId', { userId: user.id })
+      .andWhere('tm.teamId = :teamId', { teamId: targetTeamId })
       .andWhere('tm.status = :status', { status: TeamMemberStatus.ACTIVE })
-      // Exclude the OWNER row (safety: OWNER should never appear here since
-      // OWNER rows have the same userId as the team's ownerId, caught above).
       .andWhere('tm.role != :ownerRole', { ownerRole: TeamRole.OWNER })
       .getOne();
 
@@ -94,7 +107,7 @@ export class TeamContextHelper {
       };
     }
 
-    // 3. No team context — solo user.
+    // B3. activeContextTeamId is stale/invalid — fall back to solo context.
     return { team: null, role: null, quotaOwner: user };
   }
 

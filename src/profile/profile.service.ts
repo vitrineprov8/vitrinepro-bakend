@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ConflictException,
@@ -6,7 +8,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
+import { Team } from '../teams/team.entity';
+import { TeamMember, TeamMemberStatus } from '../teams/team-member.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { SetActiveContextDto } from './dto/set-active-context.dto';
 import { StorageService } from '../storage/storage.service';
 
 @Injectable()
@@ -14,6 +19,10 @@ export class ProfileService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(Team)
+    private teamsRepository: Repository<Team>,
+    @InjectRepository(TeamMember)
+    private teamMembersRepository: Repository<TeamMember>,
     private storageService: StorageService,
   ) {}
 
@@ -25,8 +34,11 @@ export class ProfileService {
 
   async getPublicProfile(username: string): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { username } });
-    // Return 404 for missing users AND hidden profiles (avoids username enumeration)
-    if (!user || !user.isVisible) throw new NotFoundException('Perfil não encontrado.');
+    // Return 404 for missing users, hidden profiles, and company accounts
+    // (avoids username enumeration; companies have no public profile page)
+    if (!user || !user.isVisible || user.isCompany) {
+      throw new NotFoundException('Perfil não encontrado.');
+    }
     // Remover campos sensíveis antes de retornar
     const { password, oauthId, avatarKey, bannerKey, ...publicFields } = user as any;
     return publicFields;
@@ -63,6 +75,60 @@ export class ProfileService {
 
     user.avatarUrl = url;
     user.avatarKey = key;
+    return this.usersRepository.save(user);
+  }
+
+  /**
+   * Sets or clears the active team context for the authenticated user.
+   *
+   * Rules:
+   *  - teamId = null → switches to personal context (clears activeContextTeamId).
+   *  - teamId = UUID  → the user must be the OWNER of that team OR an ACTIVE member.
+   *
+   * Persists activeContextTeamId on the User row. The frontend uses this to
+   * show "Publicando como: Empresa X" in VagaEditor, and the vagas service
+   * reads it when creating vagas to derive owner/companyId from the team.
+   */
+  async setActiveContext(userId: string, dto: SetActiveContextDto): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    if (dto.teamId === null || dto.teamId === undefined) {
+      // Reset to personal context
+      user.activeContextTeamId = null;
+      return this.usersRepository.save(user);
+    }
+
+    // Validate the user owns or belongs to this team
+    const team = await this.teamsRepository.findOne({
+      where: { id: dto.teamId },
+      select: ['id', 'ownerId'],
+    });
+
+    if (!team) {
+      throw new NotFoundException('Time não encontrado.');
+    }
+
+    const isOwner = team.ownerId === userId;
+
+    if (!isOwner) {
+      // Check active membership
+      const membership = await this.teamMembersRepository.findOne({
+        where: {
+          teamId: dto.teamId,
+          userId,
+          status: TeamMemberStatus.ACTIVE,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException(
+          'Você não é membro ativo deste time.',
+        );
+      }
+    }
+
+    user.activeContextTeamId = dto.teamId;
     return this.usersRepository.save(user);
   }
 

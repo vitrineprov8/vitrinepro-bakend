@@ -39,6 +39,15 @@ export class TeamsController {
   }
 
   /**
+   * Lists ALL teams the user can act in: owned team + active memberships.
+   * Used by the context switcher when a recruiter has multiple team invites.
+   */
+  @Get('accessible')
+  listAccessible(@Request() req: { user: User }) {
+    return this.teamsService.listAccessibleTeams(req.user);
+  }
+
+  /**
    * Invites a new member by email.
    * Only OWNER or MANAGER can invite.
    * Respects the plan's seat limit.

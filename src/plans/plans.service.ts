@@ -105,11 +105,17 @@ export class PlansService {
       ? planUser.plan
       : PlanTier.FREE;
 
-    // Vaga usage: count all vagas whose creators are in the team
-    // (includes owner + all ACTIVE members) so the counter is team-wide.
+    // Vaga usage: count vagas according to active context.
+    //
+    //  - Personal context (ctx.team === null):
+    //      Count only the acting user's own vagas, even if they own a team.
+    //      The personal toggle isolates the user's own scope.
+    //  - Team context (ctx.team !== null, isTeamMember or OWNER in that team):
+    //      Count all vagas created by anyone in the team (owner + active members)
+    //      so the counter reflects team-wide quota consumption.
     let vagasUsed: number;
-    if (isTeamMember && ctx.quotaOwner) {
-      // Collect all userIds in the owner's team for team-wide count
+    if (ctx.team !== null && ctx.quotaOwner) {
+      // Team context — expand to all team member ids for the team-wide count
       const teamUserIds = await this.teamContextHelper.getTeamUserIds(
         ctx.quotaOwner.id,
       );
@@ -117,10 +123,9 @@ export class PlansService {
         where: { createdById: In(teamUserIds) },
       });
     } else {
-      // OWNER or solo user — count team-wide (includes members if any)
-      const teamUserIds = await this.teamContextHelper.getTeamUserIds(user.id);
+      // Personal context — count only the acting user's own vagas
       vagasUsed = await this.vagasRepository.count({
-        where: { createdById: In(teamUserIds) },
+        where: { createdById: user.id },
       });
     }
 

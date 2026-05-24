@@ -12,7 +12,7 @@ export class CompanyRecruiters1747000007000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "company_recruiters" (
+      CREATE TABLE IF NOT EXISTS "company_recruiters" (
         "companyId"  UUID NOT NULL,
         "userId"     UUID NOT NULL,
         CONSTRAINT "PK_company_recruiters" PRIMARY KEY ("companyId", "userId"),
@@ -23,10 +23,10 @@ export class CompanyRecruiters1747000007000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_company_recruiters_companyId" ON "company_recruiters" ("companyId")
+      CREATE INDEX IF NOT EXISTS "IDX_company_recruiters_companyId" ON "company_recruiters" ("companyId")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_company_recruiters_userId" ON "company_recruiters" ("userId")
+      CREATE INDEX IF NOT EXISTS "IDX_company_recruiters_userId" ON "company_recruiters" ("userId")
     `);
   }
 
