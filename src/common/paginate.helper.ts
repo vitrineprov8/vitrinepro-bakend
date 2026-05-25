@@ -12,7 +12,7 @@ export async function paginate<T extends ObjectLiteral>(
   page: number = 1,
   limit: number = 10,
 ): Promise<PaginatedResult<T>> {
-  const safeLimit = Math.min(limit, 20);
+  const safeLimit = Math.min(limit, 100);
   const safePage = Math.max(page, 1);
   const skip = (safePage - 1) * safeLimit;
 
