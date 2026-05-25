@@ -9,6 +9,7 @@ import { VagasService } from './vagas.service';
 import { VagasController } from './vagas.controller';
 import { VagaPublishLedgerModule } from '../vaga-publish-ledger/vaga-publish-ledger.module';
 import { TeamsModule } from '../teams/teams.module';
+import { SeoModule } from '../seo/seo.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TeamsModule } from '../teams/teams.module';
     VagaPublishLedgerModule,
     // TeamContextHelper for resolving quota owner and team-wide listings.
     TeamsModule,
+    SeoModule,
   ],
   providers: [VagasService],
   controllers: [VagasController],

@@ -6,12 +6,14 @@ import { PortfolioService } from './portfolio.service';
 import { PortfolioController } from './portfolio.controller';
 import { TagsModule } from '../tags/tags.module';
 import { StorageModule } from '../storage/storage.module';
+import { SeoModule } from '../seo/seo.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PortfolioItem, PortfolioFile]),
     TagsModule,
     StorageModule,
+    SeoModule,
   ],
   providers: [PortfolioService],
   controllers: [PortfolioController],

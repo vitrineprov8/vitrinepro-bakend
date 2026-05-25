@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -12,11 +13,15 @@ import { UpdatePortfolioDto } from './dto/update-portfolio.dto';
 import { ListPortfolioDto } from './dto/list-portfolio.dto';
 import { TagsService } from '../tags/tags.service';
 import { StorageService } from '../storage/storage.service';
+import { SeoService } from '../seo/seo.service';
+import { TombstoneType, TombstoneReason } from '../seo/slug-tombstone.entity';
 import { paginate } from '../common/paginate.helper';
 import slugify from 'slugify';
 
 @Injectable()
 export class PortfolioService {
+  private readonly logger = new Logger(PortfolioService.name);
+
   constructor(
     @InjectRepository(PortfolioItem)
     private portfolioRepository: Repository<PortfolioItem>,
@@ -24,6 +29,7 @@ export class PortfolioService {
     private filesRepository: Repository<PortfolioFile>,
     private tagsService: TagsService,
     private storageService: StorageService,
+    private seoService: SeoService,
     private dataSource: DataSource,
   ) {}
 
@@ -124,6 +130,10 @@ export class PortfolioService {
     // Resolve slug and tags outside the transaction (both are read-only lookups).
     const item = await this.findOneOrFail(id, userId);
 
+    // Track fields before mutation for SEO side-effects.
+    const oldSlug = item.slug;
+    const oldStatus = item.status;
+
     if (dto.title && dto.title !== item.title) {
       item.slug = await this.generateUniqueSlug(dto.title, id);
     }
@@ -157,8 +167,9 @@ export class PortfolioService {
     // Business rule: only one featured item is allowed per user at a time.
     // When isFeatured is being set to true, clear the flag on all sibling items
     // atomically in a single transaction to prevent race conditions.
+    let savedItem: PortfolioItem;
     if (dto.isFeatured === true) {
-      return this.dataSource.transaction(async (manager) => {
+      savedItem = await this.dataSource.transaction(async (manager) => {
         // Unset isFeatured on every OTHER item owned by this user.
         await manager
           .createQueryBuilder()
@@ -169,13 +180,64 @@ export class PortfolioService {
 
         return manager.save(PortfolioItem, item);
       });
+    } else {
+      savedItem = await this.portfolioRepository.save(item);
     }
 
-    return this.portfolioRepository.save(item);
+    // If the slug changed, register a tombstone so the old URL gets a 301
+    // instead of a 404 or soft-404. Fire-and-forget — SEO is non-critical and
+    // must not break a successful update.
+    if (item.slug !== oldSlug) {
+      this.seoService
+        .createTombstone({
+          type: TombstoneType.PORTFOLIO,
+          slug: oldSlug,
+          reason: TombstoneReason.RENAMED,
+          redirectTo: `/portfolio/${item.slug}`,
+        })
+        .then(() => {
+          // Also clear any stale tombstone pointing to the new slug
+          // (handles the edge case where the user reverted to an old slug).
+          return this.seoService.removeTombstone(
+            TombstoneType.PORTFOLIO,
+            item.slug,
+          );
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to create renamed tombstone for slug "${oldSlug}" → "${item.slug}"`,
+            err,
+          ),
+        );
+
+      // Notify search engines about both the old (gone) and new (live) URLs.
+      void this.seoService.notifyIndexNow([
+        `/portfolio/${oldSlug}`,
+        `/portfolio/${item.slug}`,
+      ]);
+    }
+
+    // Notify when item transitions to PUBLISHED for the first time.
+    // oldStatus tracks what the status was before Object.assign so we only
+    // ping on an actual DRAFT/CLOSED → PUBLISHED transition, not on every save.
+    const becamePublished =
+      oldStatus !== PortfolioStatus.PUBLISHED &&
+      savedItem.status === PortfolioStatus.PUBLISHED;
+    if (becamePublished) {
+      void this.seoService.notifyIndexNow(`/portfolio/${savedItem.slug}`);
+    }
+
+    return savedItem;
   }
 
   async delete(id: string, userId: string): Promise<void> {
     const item = await this.findOneOrFail(id, userId);
+
+    // Capture the slug BEFORE remove() cascades and the entity is gone.
+    // The tombstone only matters for PUBLISHED items (those have been indexed),
+    // but we record it regardless — a DRAFT tombstone is harmless and costs
+    // essentially nothing at lookup time (partial index filters them the same).
+    const slugToTombstone = item.slug;
 
     if (item.coverImageKey) {
       await this.storageService.deleteFile(item.coverImageKey);
@@ -187,6 +249,24 @@ export class PortfolioService {
     }
 
     await this.portfolioRepository.remove(item);
+
+    // Register tombstone after successful delete. Fire-and-forget — SEO is
+    // non-critical and must not roll back an already-committed deletion.
+    this.seoService
+      .createTombstone({
+        type: TombstoneType.PORTFOLIO,
+        slug: slugToTombstone,
+        reason: TombstoneReason.DELETED,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Failed to create tombstone for deleted portfolio slug "${slugToTombstone}"`,
+          err,
+        ),
+      );
+
+    // Notify IndexNow so Bing/Yandex deindex the URL within hours.
+    void this.seoService.notifyIndexNow(`/portfolio/${slugToTombstone}`);
   }
 
   async uploadCover(id: string, userId: string, file: Express.Multer.File): Promise<PortfolioItem> {

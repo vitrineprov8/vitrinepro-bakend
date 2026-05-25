@@ -21,6 +21,7 @@ import { SavedVaga } from './saved-vagas/saved-vaga.entity';
 import { SavedFilter } from './saved-filters/saved-filter.entity';
 import { HunterInterest } from './hunter-interests/hunter-interest.entity';
 import { ProcessShareLink } from './process-share/process-share-link.entity';
+import { SlugTombstone } from './seo/slug-tombstone.entity';
 
 dotenv.config();
 
@@ -51,6 +52,7 @@ export const AppDataSource = new DataSource({
     SavedFilter,
     HunterInterest,
     ProcessShareLink,
+    SlugTombstone,
   ],
   migrations: [
     'src/migrations/*.ts',

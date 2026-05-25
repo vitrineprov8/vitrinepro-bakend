@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
@@ -10,12 +11,17 @@ import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Team } from '../teams/team.entity';
 import { TeamMember, TeamMemberStatus } from '../teams/team-member.entity';
+import { PortfolioItem, PortfolioStatus } from '../portfolio/portfolio.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetActiveContextDto } from './dto/set-active-context.dto';
 import { StorageService } from '../storage/storage.service';
+import { SeoService } from '../seo/seo.service';
+import { TombstoneType, TombstoneReason } from '../seo/slug-tombstone.entity';
 
 @Injectable()
 export class ProfileService {
+  private readonly logger = new Logger(ProfileService.name);
+
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
@@ -23,7 +29,10 @@ export class ProfileService {
     private teamsRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMembersRepository: Repository<TeamMember>,
+    @InjectRepository(PortfolioItem)
+    private portfolioRepository: Repository<PortfolioItem>,
     private storageService: StorageService,
+    private seoService: SeoService,
   ) {}
 
   async getMyProfile(userId: string): Promise<User> {
@@ -44,9 +53,68 @@ export class ProfileService {
     return publicFields;
   }
 
+  /**
+   * Returns a lightweight paginated list of visible individual profiles for
+   * consumption by the sitemap generator.
+   *
+   * Criteria:
+   *   - isVisible = true
+   *   - isCompany = false  (company accounts have no public profile page)
+   *   - has a non-empty bio  OR  has at least one PUBLISHED portfolio item
+   *
+   * Only `username` and `updatedAt` are returned — the sitemap does not need
+   * anything else, and avoiding a SELECT * keeps the payload tiny.
+   *
+   * Pagination: page/limit with a hard cap of 100 per page.
+   */
+  async getPublicList(
+    page = 1,
+    limit = 20,
+  ): Promise<{ data: { username: string; updatedAt: Date }[]; total: number; page: number; lastPage: number }> {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(100, Math.max(1, limit));
+
+    // Subquery: user ids that have at least one PUBLISHED portfolio item.
+    const publishedSubQuery = this.portfolioRepository
+      .createQueryBuilder('pi')
+      .select('pi.userId')
+      .where('pi.status = :status', { status: PortfolioStatus.PUBLISHED })
+      .getQuery();
+
+    const qb = this.usersRepository
+      .createQueryBuilder('u')
+      .select(['u.username', 'u.updatedAt'])
+      .where('u.isVisible = true')
+      .andWhere('u.isCompany = false')
+      .andWhere('u.username IS NOT NULL')
+      .andWhere(
+        // Bio present  OR  has a published portfolio item (EXISTS subquery)
+        `(
+          (u.bio IS NOT NULL AND u.bio != '')
+          OR u.id IN (${publishedSubQuery})
+        )`,
+      )
+      .setParameter('status', PortfolioStatus.PUBLISHED)
+      .orderBy('u.updatedAt', 'DESC')
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit);
+
+    const [rows, total] = await qb.getManyAndCount();
+
+    return {
+      data: rows.map((u) => ({ username: u.username as string, updatedAt: u.updatedAt })),
+      total,
+      page: safePage,
+      lastPage: Math.ceil(total / safeLimit) || 1,
+    };
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    const oldUsername = user.username;
+    const wasVisible = user.isVisible;
 
     if (dto.username && dto.username !== user.username) {
       const exists = await this.usersRepository.findOne({
@@ -56,7 +124,82 @@ export class ProfileService {
     }
 
     Object.assign(user, dto);
-    return this.usersRepository.save(user);
+    const savedUser = await this.usersRepository.save(user);
+
+    // ── SEO tombstone side-effects (fire-and-forget, non-critical) ──────────
+
+    const usernameChanged =
+      dto.username !== undefined && dto.username !== oldUsername;
+    const visibilityChanged =
+      dto.isVisible !== undefined && dto.isVisible !== wasVisible;
+
+    // Tombstones require a non-null username. Users registered via OAuth may
+    // transiently have a null username before the onboarding step assigns one.
+    if (usernameChanged && oldUsername && savedUser.username) {
+      // Old username becomes a permanent redirect to the new one.
+      this.seoService
+        .createTombstone({
+          type: TombstoneType.PROFILE,
+          slug: oldUsername,
+          reason: TombstoneReason.RENAMED,
+          redirectTo: `/perfil/${savedUser.username}`,
+        })
+        .then(() =>
+          // Remove any stale tombstone that might point at the new username
+          // (edge case: user adopts a previously-tombstoned username).
+          this.seoService.removeTombstone(
+            TombstoneType.PROFILE,
+            savedUser.username as string,
+          ),
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Failed to create renamed tombstone for profile "${oldUsername}" → "${savedUser.username}"`,
+            err,
+          ),
+        );
+
+      // Notify both old and new profile URLs so bots update their indexes fast.
+      void this.seoService.notifyIndexNow([
+        `/perfil/${oldUsername}`,
+        `/perfil/${savedUser.username}`,
+      ]);
+    }
+
+    if (visibilityChanged && savedUser.username) {
+      if (!savedUser.isVisible) {
+        // Profile was hidden — mark as 410 Gone.
+        this.seoService
+          .createTombstone({
+            type: TombstoneType.PROFILE,
+            slug: savedUser.username,
+            reason: TombstoneReason.HIDDEN,
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Failed to create hidden tombstone for profile "${savedUser.username}"`,
+              err,
+            ),
+          );
+      } else {
+        // Profile became visible again — remove the tombstone so 404 lookup
+        // returns { exists: false } and the frontend serves a normal 200.
+        this.seoService
+          .removeTombstone(TombstoneType.PROFILE, savedUser.username)
+          .catch((err) =>
+            this.logger.error(
+              `Failed to remove tombstone for re-published profile "${savedUser.username}"`,
+              err,
+            ),
+          );
+      }
+
+      // Notify IndexNow regardless of direction (hide or re-show) — either
+      // way the bots need to re-crawl to update the index.
+      void this.seoService.notifyIndexNow(`/perfil/${savedUser.username}`);
+    }
+
+    return savedUser;
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File): Promise<User> {

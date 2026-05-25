@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -18,6 +19,8 @@ import { Company } from '../companies/company.entity';
 import { Team } from '../teams/team.entity';
 import { TeamMember, TeamMemberStatus, TeamRole } from '../teams/team-member.entity';
 import { TeamContextHelper } from '../teams/team-context.helper';
+import { SeoService } from '../seo/seo.service';
+import { TombstoneType, TombstoneReason } from '../seo/slug-tombstone.entity';
 import { CreateVagaDto } from './dto/create-vaga.dto';
 import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
@@ -28,6 +31,8 @@ type VagaWithCount = Vaga & { applicationsCount: number };
 
 @Injectable()
 export class VagasService {
+  private readonly logger = new Logger(VagasService.name);
+
   constructor(
     @InjectRepository(Vaga)
     private vagasRepository: Repository<Vaga>,
@@ -42,6 +47,7 @@ export class VagasService {
     @InjectDataSource()
     private dataSource: DataSource,
     private teamContextHelper: TeamContextHelper,
+    private seoService: SeoService,
   ) {}
 
   private async attachApplicationsCount(
@@ -569,6 +575,11 @@ export class VagasService {
       }
 
       return manager.save(Vaga, vaga);
+    }).then((savedVaga) => {
+      // Notify IndexNow outside the transaction so a failure here cannot
+      // roll back the already-committed publish.
+      void this.seoService.notifyIndexNow(`/vaga/${savedVaga.slug}`);
+      return savedVaga;
     });
   }
 
@@ -593,8 +604,34 @@ export class VagasService {
   async remove(id: string, actor: User): Promise<void> {
     const vaga = await this.findById(id);
     await this.assertVagaAccess(vaga, actor);
+
+    // Capture slug before remove() clears the entity.
+    const slugToTombstone = vaga.slug;
+    const wasPublished = vaga.status === VagaStatus.PUBLISHED;
+
     // Ledger rows are NOT deleted — the FK is SET NULL, preserving the consumed slot
     await this.vagasRepository.remove(vaga);
+
+    // Only PUBLISHED vagas have been indexed by Google; creating tombstones for
+    // draft/closed vagas is harmless but unnecessary. We create it regardless to
+    // keep the logic simple and consistent — the TTL of 180 days is negligible.
+    if (wasPublished) {
+      this.seoService
+        .createTombstone({
+          type: TombstoneType.VAGA,
+          slug: slugToTombstone,
+          reason: TombstoneReason.DELETED,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to create tombstone for deleted vaga slug "${slugToTombstone}"`,
+            err,
+          ),
+        );
+
+      // Notify IndexNow so Bing/Yandex deindex the deleted vaga within hours.
+      void this.seoService.notifyIndexNow(`/vaga/${slugToTombstone}`);
+    }
   }
 
   /**

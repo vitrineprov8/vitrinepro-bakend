@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { databaseConfig } from './database/database.config';
@@ -27,10 +28,12 @@ import { SavedVagasModule } from './saved-vagas/saved-vagas.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { HunterInterestsModule } from './hunter-interests/hunter-interests.module';
 import { ProcessShareModule } from './process-share/process-share.module';
+import { SeoModule } from './seo/seo.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
+    ScheduleModule.forRoot(),
     StorageModule,
     UsersModule,
     AuthModule,
@@ -54,6 +57,7 @@ import { ProcessShareModule } from './process-share/process-share.module';
     SavedFiltersModule,
     HunterInterestsModule,
     ProcessShareModule,
+    SeoModule,
     // SeedModule is only active outside production to prevent accidental data
     // insertion or exposure of unauthenticated mutation endpoints in prod.
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),

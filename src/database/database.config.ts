@@ -19,6 +19,7 @@ import { SavedVaga } from '../saved-vagas/saved-vaga.entity';
 import { SavedFilter } from '../saved-filters/saved-filter.entity';
 import { HunterInterest } from '../hunter-interests/hunter-interest.entity';
 import { ProcessShareLink } from '../process-share/process-share-link.entity';
+import { SlugTombstone } from '../seo/slug-tombstone.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -47,6 +48,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     SavedFilter,
     HunterInterest,
     ProcessShareLink,
+    SlugTombstone,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

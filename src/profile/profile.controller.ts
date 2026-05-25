@@ -5,6 +5,7 @@ import {
   Post,
   Param,
   Body,
+  Query,
   UseGuards,
   Request,
   UseInterceptors,
@@ -15,6 +16,7 @@ import { memoryStorage } from 'multer';
 import { ProfileService } from './profile.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetActiveContextDto } from './dto/set-active-context.dto';
+import { PublicListQueryDto } from './dto/public-list-query.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('profile')
@@ -59,6 +61,22 @@ export class ProfileController {
     @Body() dto: SetActiveContextDto,
   ) {
     return this.profileService.setActiveContext(req.user.id, dto);
+  }
+
+  /**
+   * GET /profile/public-list?page=1&limit=20
+   *
+   * Public, no auth required.
+   * Used by the sitemap generator to enumerate all indexable profiles.
+   * Returns only `username` and `updatedAt` — no PII, minimal payload.
+   * Max 100 items/page (vs 20 default).
+   *
+   * IMPORTANT: this route MUST appear before GET :username so NestJS
+   * does not interpret "public-list" as a username path parameter.
+   */
+  @Get('public-list')
+  getPublicList(@Query() query: PublicListQueryDto) {
+    return this.profileService.getPublicList(query.page, query.limit);
   }
 
   @Get(':username')
