@@ -167,22 +167,28 @@ export class VagasService {
    * - Solo user: only their own vagas.
    */
   async listMine(user: User, dto: ListVagasDto) {
-    const { page = 1, limit = 10, q, status, type, workMode } = dto;
-
     const ctx = await this.teamContextHelper.getTeamContext(user);
-    const ownerId = ctx.quotaOwner.id;
-
-    // In personal context (ctx.team === null) list only the acting user's own vagas,
-    // even if they happen to own a team — personal toggle must isolate their scope.
-    // In team context, expand to all team member ids under the quota owner.
-    const teamUserIds = ctx.team
-      ? await this.teamContextHelper.getTeamUserIds(ownerId)
-      : [user.id];
 
     const qb = this.vagasRepository
       .createQueryBuilder('vaga')
-      .where('vaga.createdById IN (:...userIds)', { userIds: teamUserIds })
+      .leftJoin('vaga.company', 'company')
       .orderBy('vaga.createdAt', 'DESC');
+
+    if (ctx.team) {
+      // Team context: vaga pertence ao time se a sua company é do quotaOwner.
+      // Filtrar por createdById dos membros traz contaminação cruzada quando
+      // o usuário pertence a múltiplos times.
+      qb.where('company.ownerId = :ownerId', { ownerId: ctx.quotaOwner.id });
+    } else {
+      // Personal context: somente vagas do próprio user E sem associação a
+      // company de time (companyId null ou company.ownerId = user.id).
+      qb.where('vaga.createdById = :userId', { userId: user.id }).andWhere(
+        '(vaga.companyId IS NULL OR company.ownerId = :userId)',
+        { userId: user.id },
+      );
+    }
+
+    const { page = 1, limit = 10, q, status, type, workMode } = dto;
 
     if (status) qb.andWhere('vaga.status = :status', { status });
     if (q) {
