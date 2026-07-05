@@ -76,3 +76,29 @@ export function passwordResetTemplate(link: string): MailContent {
     ),
   };
 }
+
+const TEAM_ROLE_LABEL: Record<string, string> = {
+  OWNER: 'Proprietário(a)',
+  MANAGER: 'Gerente',
+  RECRUITER: 'Recrutador(a)',
+};
+
+/** Convite de time por token (B7). */
+export function teamInviteTemplate(
+  teamName: string,
+  inviterName: string,
+  role: string,
+  link: string,
+): MailContent {
+  const roleLabel = TEAM_ROLE_LABEL[role] ?? role;
+  return {
+    subject: `${inviterName} te convidou para o time "${teamName}" na VitrinePro`,
+    html: layout(
+      'Convite para um time',
+      `<strong>${inviterName}</strong> te convidou para participar do time <strong>${teamName}</strong> na VitrinePro,
+       com a função de <strong>${roleLabel}</strong>.<br><br>
+       Clique no botão abaixo para revisar e aceitar o convite.`,
+      { label: 'Ver convite', url: link },
+    ),
+  };
+}

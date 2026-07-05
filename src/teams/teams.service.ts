@@ -5,11 +5,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { Team } from './team.entity';
 import { TeamMember, TeamMemberStatus, TeamRole } from './team-member.entity';
 import { User, PlanTier } from '../users/user.entity';
 import { PLAN_SEAT_LIMITS } from '../plans/plan-limits';
 import { TeamContextHelper } from './team-context.helper';
+import { MailService } from '../mail/mail.service';
 
 /** Plans that unlock multi-user team functionality */
 const TEAM_ALLOWED_PLANS: PlanTier[] = [PlanTier.TEAM, PlanTier.ENTERPRISE];
@@ -22,6 +24,7 @@ export class TeamsService {
     @InjectRepository(TeamMember)
     private teamMembersRepository: Repository<TeamMember>,
     private teamContextHelper: TeamContextHelper,
+    private mailService: MailService,
   ) {}
 
   /**
@@ -192,15 +195,38 @@ export class TeamsService {
       throw new ForbiddenException('Este e-mail já foi convidado para o time.');
     }
 
+    const inviteToken = randomBytes(24).toString('hex');
     const member = this.teamMembersRepository.create({
       teamId: team.id,
       userId: null,
       invitedEmail: dto.email,
       role: dto.role,
       status: TeamMemberStatus.PENDING,
+      inviteToken,
     });
 
-    return this.teamMembersRepository.save(member);
+    const saved = await this.teamMembersRepository.save(member);
+
+    // B7 — e-mail real via MailService (Resend; stub-log se sem RESEND_API_KEY).
+    const inviterName =
+      `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email;
+    await this.mailService.sendTeamInvite(
+      dto.email,
+      team.name,
+      inviterName,
+      dto.role,
+      inviteToken,
+    );
+
+    // Em produção não devolve o token no response — só chega ao convidado por e-mail.
+    if (process.env.NODE_ENV === 'production') {
+      const { inviteToken: _omit, ...safe } = saved as unknown as Record<
+        string,
+        unknown
+      >;
+      return safe as unknown as TeamMember;
+    }
+    return saved;
   }
 
   /**
@@ -226,6 +252,69 @@ export class TeamsService {
 
     member.userId = user.id;
     member.status = TeamMemberStatus.ACTIVE;
+
+    return this.teamMembersRepository.save(member);
+  }
+
+  /**
+   * B7 — Público (sem auth): dados básicos do convite para renderizar a
+   * página `/convite/[token]` antes do usuário logar/cadastrar.
+   * Não vaza nada sensível: só nome do time, papel e e-mail convidado.
+   */
+  async getPublicInvite(token: string): Promise<{
+    teamName: string;
+    role: TeamRole;
+    invitedEmail: string;
+    status: TeamMemberStatus;
+  }> {
+    const member = await this.teamMembersRepository
+      .createQueryBuilder('m')
+      .addSelect('m.inviteToken')
+      .innerJoinAndSelect('m.team', 'team')
+      .where('m.inviteToken = :token', { token })
+      .getOne();
+
+    if (!member) {
+      throw new NotFoundException('Convite não encontrado ou já utilizado.');
+    }
+
+    return {
+      teamName: member.team.name,
+      role: member.role,
+      invitedEmail: member.invitedEmail ?? '',
+      status: member.status,
+    };
+  }
+
+  /**
+   * B7 — Aceita um convite pelo token emailado (página pública `/convite/[token]`).
+   * Requer usuário autenticado com o MESMO e-mail do convite (login/cadastro
+   * acontece antes, no front, com `redirect` de volta para cá).
+   * Token é de uso único — limpo após aceite.
+   */
+  async acceptInviteByToken(user: User, token: string): Promise<TeamMember> {
+    const member = await this.teamMembersRepository
+      .createQueryBuilder('m')
+      .addSelect('m.inviteToken')
+      .where('m.inviteToken = :token', { token })
+      .getOne();
+
+    if (!member) {
+      throw new NotFoundException('Convite não encontrado ou já utilizado.');
+    }
+    if (
+      !member.invitedEmail ||
+      member.invitedEmail.toLowerCase() !== user.email.toLowerCase()
+    ) {
+      throw new ForbiddenException('Este convite não pertence ao seu e-mail.');
+    }
+    if (member.status === TeamMemberStatus.ACTIVE) {
+      throw new ForbiddenException('Convite já foi aceito.');
+    }
+
+    member.userId = user.id;
+    member.status = TeamMemberStatus.ACTIVE;
+    member.inviteToken = null;
 
     return this.teamMembersRepository.save(member);
   }

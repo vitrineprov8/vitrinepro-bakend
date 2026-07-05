@@ -68,6 +68,13 @@ export class TeamMember {
   @Column({ type: 'enum', enum: TeamMemberStatus, default: TeamMemberStatus.PENDING })
   status: TeamMemberStatus;
 
+  /**
+   * B7 — token de uso único enviado por e-mail ao convidado, usado pela
+   * página pública `/convite/[token]`. Null depois de aceito (one-time use).
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  inviteToken: string | null;
+
   /** Timestamp of initial invite (or team creation for the OWNER row). */
   @CreateDateColumn()
   joinedAt: Date;

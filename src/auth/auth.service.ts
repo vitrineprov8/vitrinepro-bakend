@@ -2,14 +2,21 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  NotFoundException,
+  GoneException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { TagsService } from '../tags/tags.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
+import { MailService } from '../mail/mail.service';
+
+/** B2 — token expira 1h após a solicitação. */
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -17,6 +24,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private tagsService: TagsService,
+    private mailService: MailService,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
   ) {}
@@ -171,6 +179,74 @@ export class AuthService {
     await this.tagsService.createDefaultTagsForUser(user.id);
 
     return user;
+  }
+
+  /**
+   * B2 — Solicita redefinição de senha.
+   *
+   * Resposta é SEMPRE genérica (anti-enumeração de e-mail): não revela se o
+   * e-mail existe, se é conta OAuth (sem senha), etc. Se aplicável, gera um
+   * token de 1h e dispara o e-mail via MailService (stub se sem RESEND_API_KEY).
+   */
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const genericResponse = {
+      message:
+        'Se este e-mail estiver cadastrado, você receberá um link para redefinir sua senha.',
+    };
+
+    const user = await this.usersService.findByEmail(email);
+    // Contas OAuth (sem senha local) não podem redefinir senha por e-mail —
+    // segue tudo em silêncio para não vazar essa informação.
+    if (!user || !user.password) {
+      return genericResponse;
+    }
+
+    const token = randomBytes(24).toString('hex');
+    user.passwordResetToken = token;
+    user.passwordResetExpiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+    await this.usersRepository.save(user);
+
+    await this.mailService.sendPasswordReset(user.email, token);
+
+    return genericResponse;
+  }
+
+  /**
+   * B2 — Redefine a senha a partir do token emailado.
+   * Token é de uso único (limpo após sucesso) e expira em 1h.
+   */
+  async resetPassword(token: string, password: string): Promise<{ message: string }> {
+    if (!password || password.length < 8) {
+      throw new BadRequestException('A senha precisa ter pelo menos 8 caracteres.');
+    }
+
+    const user = await this.usersRepository
+      .createQueryBuilder('u')
+      .addSelect(['u.passwordResetToken', 'u.passwordResetExpiresAt'])
+      .where('u.passwordResetToken = :token', { token })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException('Token inválido ou expirado.');
+    }
+
+    if (
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() < Date.now()
+    ) {
+      // Token expirado: limpa para não deixar pendurado.
+      user.passwordResetToken = null;
+      user.passwordResetExpiresAt = null;
+      await this.usersRepository.save(user);
+      throw new GoneException('Token inválido ou expirado.');
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.passwordResetToken = null;
+    user.passwordResetExpiresAt = null;
+    await this.usersRepository.save(user);
+
+    return { message: 'Senha redefinida com sucesso.' };
   }
 
   public generateToken(user: User) {

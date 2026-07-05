@@ -113,6 +113,14 @@ export class User {
   @Column({ type: 'varchar', length: 16, unique: true, nullable: true })
   referralCode: string | null;
 
+  // ── B2 — reset de senha ────────────────────────────────────────────────────
+  /** Token de uso único enviado por e-mail para redefinir a senha. Expira em 1h. */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  passwordResetToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  passwordResetExpiresAt: Date | null;
+
   // ── Company account fields ─────────────────────────────────────────────────
   /** When true this account represents a company, not an individual professional. */
   @Column({ type: 'boolean', default: false })

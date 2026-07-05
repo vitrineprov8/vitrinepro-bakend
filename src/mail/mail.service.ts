@@ -3,6 +3,7 @@ import {
   consentRequestTemplate,
   welcomeTemplate,
   passwordResetTemplate,
+  teamInviteTemplate,
   type MailContent,
 } from './mail.templates';
 
@@ -115,5 +116,20 @@ export class MailService {
   sendPasswordReset(to: string, token: string): Promise<SendMailResult> {
     const link = `${this.frontendUrl}/redefinir-senha/${token}`;
     return this.sendTemplate(to, passwordResetTemplate(link));
+  }
+
+  /** B7 — convite de time (link para a página pública /convite/:token). */
+  sendTeamInvite(
+    to: string,
+    teamName: string,
+    inviterName: string,
+    role: string,
+    token: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/convite/${token}`;
+    return this.sendTemplate(
+      to,
+      teamInviteTemplate(teamName, inviterName, role, link),
+    );
   }
 }
