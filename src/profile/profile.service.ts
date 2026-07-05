@@ -54,6 +54,21 @@ export class ProfileService {
   }
 
   /**
+   * B6 — Página pública de empresa (conta `isCompany`).
+   * Usa `username` como slug (mesmo mecanismo do perfil de candidato), mas
+   * exige isCompany=true — o inverso de `getPublicProfile`. 404 para conta
+   * inexistente, oculta, ou de candidato (evita enumeração de username).
+   */
+  async getPublicCompany(slug: string): Promise<Partial<User>> {
+    const user = await this.usersRepository.findOne({ where: { username: slug } });
+    if (!user || !user.isVisible || !user.isCompany) {
+      throw new NotFoundException('Empresa não encontrada.');
+    }
+    const { password, oauthId, avatarKey, bannerKey, ...publicFields } = user as any;
+    return publicFields;
+  }
+
+  /**
    * Returns a lightweight paginated list of visible individual profiles for
    * consumption by the sitemap generator.
    *

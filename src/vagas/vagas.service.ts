@@ -244,6 +244,29 @@ export class VagasService {
   }
 
   /**
+   * B6 — Vagas publicadas de uma conta empresa (`isCompany`), para a página
+   * pública `/empresa/[slug]`. Projeção enxuta (sem `description` completa).
+   */
+  async findPublicByOwner(userId: string): Promise<Partial<Vaga>[]> {
+    return this.vagasRepository.find({
+      where: { createdById: userId, status: VagaStatus.PUBLISHED },
+      order: { publishedAt: 'DESC' },
+      select: [
+        'id',
+        'slug',
+        'title',
+        'location',
+        'type',
+        'workMode',
+        'segment',
+        'salaryMin',
+        'salaryMax',
+        'publishedAt',
+      ],
+    });
+  }
+
+  /**
    * Creates a new vaga for the user.
    *
    * Status is ALWAYS forced to DRAFT server-side — creating a draft is free
