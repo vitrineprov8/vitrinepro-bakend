@@ -20,6 +20,7 @@ import { TeamMember } from './teams/team-member.entity';
 import { SavedVaga } from './saved-vagas/saved-vaga.entity';
 import { SavedFilter } from './saved-filters/saved-filter.entity';
 import { HunterInterest } from './hunter-interests/hunter-interest.entity';
+import { HunterCandidate } from './hunter-candidates/hunter-candidate.entity';
 import { ProcessShareLink } from './process-share/process-share-link.entity';
 import { SlugTombstone } from './seo/slug-tombstone.entity';
 
@@ -51,6 +52,7 @@ export const AppDataSource = new DataSource({
     SavedVaga,
     SavedFilter,
     HunterInterest,
+    HunterCandidate,
     ProcessShareLink,
     SlugTombstone,
   ],

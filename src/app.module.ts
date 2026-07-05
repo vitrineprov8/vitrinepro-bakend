@@ -27,13 +27,17 @@ import { TeamsModule } from './teams/teams.module';
 import { SavedVagasModule } from './saved-vagas/saved-vagas.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { HunterInterestsModule } from './hunter-interests/hunter-interests.module';
+import { HunterCandidatesModule } from './hunter-candidates/hunter-candidates.module';
 import { ProcessShareModule } from './process-share/process-share.module';
 import { SeoModule } from './seo/seo.module';
+import { StatsModule } from './stats/stats.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     ScheduleModule.forRoot(),
+    MailModule,
     StorageModule,
     UsersModule,
     AuthModule,
@@ -56,10 +60,10 @@ import { SeoModule } from './seo/seo.module';
     SavedVagasModule,
     SavedFiltersModule,
     HunterInterestsModule,
+    HunterCandidatesModule,
     ProcessShareModule,
     SeoModule,
-    // SeedModule is only active outside production to prevent accidental data
-    // insertion or exposure of unauthenticated mutation endpoints in prod.
+    StatsModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],

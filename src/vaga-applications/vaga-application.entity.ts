@@ -6,19 +6,17 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  Unique,
   Index,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Vaga } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
+import { HunterCandidate } from '../hunter-candidates/hunter-candidate.entity';
 
 /**
  * @deprecated ApplicationStatus enum has been replaced by the free-form
  * `pipelineStage` string + `isRejected` boolean as part of the customisable
- * pipeline migration (1747000004000).  This enum is kept here only as a
- * reference for the migration's down() reverse-mapping logic and must not be
- * used in new code.
+ * pipeline migration (1747000004000).
  */
 export enum ApplicationStatus {
   PENDING = 'PENDING',
@@ -27,8 +25,17 @@ export enum ApplicationStatus {
   REJECTED = 'REJECTED',
 }
 
+/** How the application entered the pipeline. */
+export enum ApplicationSource {
+  DIRECT = 'DIRECT',
+  HUNTER = 'HUNTER',
+}
+
+/**
+ * NOTE: uniqueness enforced by PARTIAL unique indexes in migration
+ * 1748600000000 because `userId` is now nullable for ghost candidates.
+ */
 @Entity('vaga_applications')
-@Unique(['vagaId', 'userId'])
 export class VagaApplication {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -40,12 +47,31 @@ export class VagaApplication {
   @Column({ type: 'uuid' })
   vagaId: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  /** Null for hunter-submitted ghost candidates (see hunterCandidateId). */
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'userId' })
-  user: User;
+  user: User | null;
 
-  @Column({ type: 'uuid' })
-  userId: string;
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
+
+  @Column({ type: 'varchar', length: 16, default: ApplicationSource.DIRECT })
+  source: ApplicationSource;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'submittedByHunterId' })
+  submittedByHunter: User | null;
+
+  @Index('IDX_vaga_applications_submittedByHunterId')
+  @Column({ type: 'uuid', nullable: true })
+  submittedByHunterId: string | null;
+
+  @ManyToOne(() => HunterCandidate, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'hunterCandidateId' })
+  hunterCandidate: HunterCandidate | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  hunterCandidateId: string | null;
 
   @ManyToOne(() => CV, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'cvId' })
@@ -69,46 +95,19 @@ export class VagaApplication {
   @Column({ type: 'varchar', length: 255, nullable: true })
   snapshotLocation: string | null;
 
-  /**
-   * Free-form stage identifier that references a stage `id` from the vaga
-   * owner's PipelineTemplate.  Defaults to 'para_analisar' (the first default
-   * stage).  Not a hard FK — the template is user-editable and stage ids can
-   * be custom strings.
-   *
-   * Indexed because the kanban board filters applications by (vagaId, pipelineStage).
-   */
   @Index('IDX_vaga_applications_pipelineStage')
   @Column({ type: 'varchar', length: 64, default: 'para_analisar' })
   pipelineStage: string;
 
-  /**
-   * Denormalised flag for quick rejection queries without needing to join the
-   * pipeline template.  Set to true when the recruiter moves the applicant
-   * into the special 'rejected' stage.
-   */
   @Column({ type: 'boolean', default: false })
   isRejected: boolean;
 
-  // ── Phase 3 enrichment fields ───────────────────────────────────────────────
-
-  /**
-   * General score given by the recruiter.  0.0–10.0 with one decimal place.
-   * Stored as DECIMAL(3,1).  Null means not yet rated.
-   */
   @Column({ type: 'decimal', precision: 3, scale: 1, nullable: true })
   generalScore: number | null;
 
-  /**
-   * Free-text general note from the recruiter about this candidate.
-   */
   @Column({ type: 'text', nullable: true })
   generalNote: string | null;
 
-  /**
-   * Append-only log of pipeline stage transitions.
-   * Format: Array<{ stage: string; enteredAt: string; byUserId: string; note?: string }>
-   * Most-recent entry is last; controller reverses on GET /history.
-   */
   @Index('IDX_vaga_applications_stageHistory_gin')
   @Column({ type: 'jsonb', default: [] })
   stageHistory: Array<{
@@ -118,10 +117,6 @@ export class VagaApplication {
     note?: string;
   }>;
 
-  /**
-   * Recruiter notes/ratings keyed by stage identifier.
-   * Format: Record<string, { observacoes: string; nota: number | null; updatedAt: string; byUserId: string }>
-   */
   @Column({ type: 'jsonb', default: {} })
   stageNotes: Record<
     string,

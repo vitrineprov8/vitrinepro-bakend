@@ -224,7 +224,10 @@ export class VagasService {
   }
 
   async findBySlugPublic(slug: string): Promise<Vaga> {
-    const vaga = await this.vagasRepository.findOne({ where: { slug } });
+    const vaga = await this.vagasRepository.findOne({
+      where: { slug },
+      relations: { company: true },
+    });
     if (!vaga || vaga.status !== VagaStatus.PUBLISHED) {
       throw new NotFoundException('Vaga não encontrada.');
     }
@@ -359,7 +362,10 @@ export class VagasService {
       );
     }
 
-    if (dto.title && dto.title !== vaga.title) {
+    // A URL (slug) é congelada após a primeira publicação — editar o título
+    // NÃO muda mais o slug, preservando links públicos e SEO.
+    // Em rascunhos (nunca publicados), o slug ainda acompanha o título.
+    if (dto.title && dto.title !== vaga.title && !vaga.publishedAt) {
       vaga.slug = await this.generateUniqueSlug(dto.title, id);
     }
 
