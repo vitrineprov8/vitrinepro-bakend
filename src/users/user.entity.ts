@@ -158,6 +158,23 @@ export class User {
   @Column({ type: 'timestamp', nullable: true, select: false })
   passwordResetExpiresAt: Date | null;
 
+  // ── B17 — verificação de e-mail ─────────────────────────────────────────────
+  /**
+   * Confirma que o dono da conta tem acesso ao e-mail cadastrado. Não é (por
+   * ora) um gate bloqueante em nenhum fluxo existente — apenas informativo,
+   * exibido no perfil/conta. Contas OAuth (Google/LinkedIn) já nascem
+   * verificadas, pois o provedor já validou o e-mail.
+   */
+  @Column({ type: 'boolean', default: false })
+  emailVerified: boolean;
+
+  /** Token de uso único enviado por e-mail para confirmar o endereço. Expira em 24h. */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  emailVerificationToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  emailVerificationExpiresAt: Date | null;
+
   // ── Company account fields ─────────────────────────────────────────────────
   /** When true this account represents a company, not an individual professional. */
   @Column({ type: 'boolean', default: false })

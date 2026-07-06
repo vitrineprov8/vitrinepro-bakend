@@ -2,14 +2,11 @@ import {
   IsBoolean,
   IsInt,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   IsEnum,
   IsArray,
   IsUUID,
-  Max,
-  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PortfolioStatus, PortfolioWorkStatus } from '../portfolio.entity';
@@ -71,29 +68,6 @@ export class CreatePortfolioDto {
   @IsBoolean()
   isFeatured?: boolean;
 
-  // --- Service offering fields ---
-
-  @IsOptional()
-  @IsBoolean()
-  isService?: boolean;
-
-  @IsOptional()
-  @IsString()
-  serviceType?: string;
-
-  @IsOptional()
-  @IsString()
-  actionButton?: string;
-
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  servicePrice?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(30)
-  publicationDurationDays?: number;
+  // B16 — campos de "Service offering" removidos em 2026-07-06 (nunca teve UI,
+  // zero uso real). Ver `portfolio.entity.ts` para o histórico.
 }

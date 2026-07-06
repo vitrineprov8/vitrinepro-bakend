@@ -72,11 +72,6 @@ export class PortfolioService {
         projectStatus: item.projectStatus,
         status: item.status,
         tags: item.tags,
-        isService: item.isService,
-        serviceType: item.serviceType,
-        actionButton: item.actionButton,
-        servicePrice: item.servicePrice,
-        publicationDurationDays: item.publicationDurationDays,
         isFeatured: item.isFeatured,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
@@ -126,11 +121,6 @@ export class PortfolioService {
       status: dto.status || PortfolioStatus.DRAFT,
       externalUrl: dto.externalUrl,
       tags,
-      isService: dto.isService ?? false,
-      serviceType: dto.serviceType ?? null,
-      actionButton: dto.actionButton ?? null,
-      servicePrice: dto.servicePrice ?? null,
-      publicationDurationDays: dto.publicationDurationDays ?? null,
     });
 
     return this.portfolioRepository.save(item);
@@ -163,14 +153,6 @@ export class PortfolioService {
       projectStatus: dto.projectStatus !== undefined ? dto.projectStatus : item.projectStatus,
       status: dto.status ?? item.status,
       externalUrl: dto.externalUrl ?? item.externalUrl,
-      isService: dto.isService !== undefined ? dto.isService : item.isService,
-      serviceType: dto.serviceType !== undefined ? dto.serviceType : item.serviceType,
-      actionButton: dto.actionButton !== undefined ? dto.actionButton : item.actionButton,
-      servicePrice: dto.servicePrice !== undefined ? dto.servicePrice : item.servicePrice,
-      publicationDurationDays:
-        dto.publicationDurationDays !== undefined
-          ? dto.publicationDurationDays
-          : item.publicationDurationDays,
       isFeatured: dto.isFeatured !== undefined ? dto.isFeatured : item.isFeatured,
     });
 

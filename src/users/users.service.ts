@@ -41,6 +41,8 @@ export class UsersService {
     companyName?: string | null;
     companyIndustry?: string | null;
     personas?: UserPersona[];
+    /** B17 — true apenas para contas OAuth (provedor já validou o e-mail). */
+    emailVerified?: boolean;
   }): Promise<User> {
     const username = await this.generateUniqueUsername(
       userData.firstName,

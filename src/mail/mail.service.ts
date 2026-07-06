@@ -6,6 +6,12 @@ import {
   teamInviteTemplate,
   verificationApprovedTemplate,
   verificationRejectedTemplate,
+  emailVerificationTemplate,
+  placementHiredTemplate,
+  placementConfirmedTemplate,
+  placementDisputedTemplate,
+  placementGuaranteeBrokenTemplate,
+  placementFeeReleasedTemplate,
   type MailContent,
 } from './mail.templates';
 
@@ -49,9 +55,8 @@ export class MailService {
 
   async send(input: SendMailInput): Promise<SendMailResult> {
     if (!this.apiKey) {
-      // Modo stub (sem chave): loga e segue. Útil em dev.
       this.logger.warn(
-        `[MAIL stub] Para: ${input.to} · Assunto: "${input.subject}" (defina RESEND_API_KEY para enviar de verdade)`,
+        `[MAIL stub] Para: ${input.to} - Assunto: "${input.subject}" (defina RESEND_API_KEY para enviar de verdade)`,
       );
       return { sent: false, stubbed: true };
     }
@@ -120,6 +125,16 @@ export class MailService {
     return this.sendTemplate(to, passwordResetTemplate(link));
   }
 
+  /** B17 — confirmação de e-mail após cadastro (link para /verificar-email/:token). */
+  sendEmailVerification(
+    to: string,
+    firstName: string,
+    token: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/verificar-email/${token}`;
+    return this.sendTemplate(to, emailVerificationTemplate(firstName, link));
+  }
+
   /** B7 — convite de time (link para a página pública /convite/:token). */
   sendTeamInvite(
     to: string,
@@ -151,6 +166,87 @@ export class MailService {
     return this.sendTemplate(
       to,
       verificationRejectedTemplate(firstName, reason, link),
+    );
+  }
+
+  // ── B9 — Placements ────────────────────────────────────────────────────────
+
+  /** P1 — empresa marcou o candidato indicado como contratado; hunter precisa confirmar. */
+  sendPlacementHired(
+    to: string,
+    hunterFirstName: string,
+    vagaTitle: string,
+    hunterShareAmount: number,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/hunter/mesa`;
+    return this.sendTemplate(
+      to,
+      placementHiredTemplate(hunterFirstName, vagaTitle, hunterShareAmount, link),
+    );
+  }
+
+  /** P2 — hunter confirmou (ou auto-confirm 7d); avisa a empresa. */
+  sendPlacementConfirmed(
+    to: string,
+    companyFirstName: string,
+    vagaTitle: string,
+    autoConfirmed: boolean,
+    guaranteeEndsAt: Date,
+    placementId: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/placements/${placementId}`;
+    return this.sendTemplate(
+      to,
+      placementConfirmedTemplate(
+        companyFirstName,
+        vagaTitle,
+        autoConfirmed,
+        guaranteeEndsAt,
+        link,
+      ),
+    );
+  }
+
+  /** P2 — hunter contestou os dados; avisa a empresa. */
+  sendPlacementDisputed(
+    to: string,
+    companyFirstName: string,
+    vagaTitle: string,
+    reason: string,
+    placementId: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/placements/${placementId}`;
+    return this.sendTemplate(
+      to,
+      placementDisputedTemplate(companyFirstName, vagaTitle, reason, link),
+    );
+  }
+
+  /** P4 — quebra de garantia; hunter é notificado para indicar substituto. */
+  sendPlacementGuaranteeBroken(
+    to: string,
+    hunterFirstName: string,
+    vagaTitle: string,
+    reason: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/hunter/marketplace`;
+    return this.sendTemplate(
+      to,
+      placementGuaranteeBrokenTemplate(hunterFirstName, vagaTitle, reason, link),
+    );
+  }
+
+  /** Garantia expirou sem quebra — fee liberado ao hunter. */
+  sendPlacementFeeReleased(
+    to: string,
+    hunterFirstName: string,
+    vagaTitle: string,
+    hunterShareAmount: number,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/hunter/mesa`;
+    return this.sendTemplate(
+      to,
+      placementFeeReleasedTemplate(hunterFirstName, vagaTitle, hunterShareAmount, link),
     );
   }
 }

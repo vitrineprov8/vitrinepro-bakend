@@ -28,12 +28,6 @@ export class ProcessShareService {
     private usersRepository: Repository<User>,
   ) {}
 
-  // ── Authorization helper ──────────────────────────────────────────────────
-
-  /**
-   * Verifies that the actor is the vaga owner or an admin.
-   * Returns the loaded application (with vaga relation).
-   */
   private async loadAndAuthorize(
     applicationId: string,
     actorId: string,
@@ -58,8 +52,6 @@ export class ProcessShareService {
     return app;
   }
 
-  // ── Create share link ─────────────────────────────────────────────────────
-
   async create(
     applicationId: string,
     dto: CreateShareDto,
@@ -80,8 +72,6 @@ export class ProcessShareService {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const baseUrl =
-      process.env.PUBLIC_BASE_URL?.replace(/\/$/, '') ?? 'https://v8pro.com.br';
 
     const link = this.shareLinksRepository.create({
       applicationId,
@@ -93,10 +83,15 @@ export class ProcessShareService {
 
     await this.shareLinksRepository.save(link);
 
-    return { token, url: `${baseUrl}/processo/${token}` };
+    return { token, url: this.buildPublicUrl(token) };
   }
 
-  // ── Revoke share link ─────────────────────────────────────────────────────
+  private buildPublicUrl(token: string): string {
+    const frontendUrl = (
+      process.env.FRONTEND_URL || 'http://localhost:4321'
+    ).replace(/\/$/, '');
+    return `${frontendUrl}/processo/${token}`;
+  }
 
   async revoke(
     applicationId: string,
@@ -115,7 +110,28 @@ export class ProcessShareService {
     await this.shareLinksRepository.save(link);
   }
 
-  // ── Public process view ───────────────────────────────────────────────────
+  async listLinks(
+    applicationId: string,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<ShareLinkSummary[]> {
+    await this.loadAndAuthorize(applicationId, actorId, actorRole);
+
+    const links = await this.shareLinksRepository.find({
+      where: { applicationId },
+      order: { createdAt: 'DESC' },
+    });
+
+    const now = new Date();
+    return links.map((l) => ({
+      token: l.token,
+      url: this.buildPublicUrl(l.token),
+      expiresAt: l.expiresAt,
+      revokedAt: l.revokedAt,
+      createdAt: l.createdAt,
+      isActive: !l.revokedAt && (!l.expiresAt || l.expiresAt > now),
+    }));
+  }
 
   async getPublicProcess(token: string): Promise<PublicProcessSnapshot> {
     const link = await this.shareLinksRepository.findOne({
@@ -130,15 +146,16 @@ export class ProcessShareService {
       throw new NotFoundException('Este link expirou.');
     }
 
-    // Load application with all necessary relations
     const app = await this.applicationsRepository.findOne({
       where: { id: link.applicationId },
-      relations: ['vaga', 'user'],
+      relations: ['vaga', 'vaga.company', 'vaga.createdBy', 'user'],
     });
 
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    // Resolve author names for stageHistory entries
+    const companyName =
+      app.vaga?.company?.name ?? app.vaga?.createdBy?.companyName ?? null;
+
     const userIds = [
       ...new Set(app.stageHistory.map((e) => e.byUserId)),
     ];
@@ -171,6 +188,7 @@ export class ProcessShareService {
             title: app.vaga.title,
             segment: app.vaga.segment,
             location: app.vaga.location,
+            companyName,
           }
         : null,
       pipelineStage: app.pipelineStage,
@@ -182,8 +200,6 @@ export class ProcessShareService {
       appliedAt: app.createdAt,
     };
   }
-
-  // ── Get active share link for an application ──────────────────────────────
 
   async getActiveLink(applicationId: string): Promise<ProcessShareLink | null> {
     const now = new Date();
@@ -198,8 +214,6 @@ export class ProcessShareService {
   }
 }
 
-// ── Snapshot type ─────────────────────────────────────────────────────────────
-
 export interface PublicProcessSnapshot {
   candidate: {
     name: string;
@@ -210,6 +224,7 @@ export interface PublicProcessSnapshot {
     title: string;
     segment: string | null;
     location: string | null;
+    companyName: string | null;
   } | null;
   pipelineStage: string;
   isRejected: boolean;
@@ -226,4 +241,13 @@ export interface PublicProcessSnapshot {
     { observacoes: string; nota: number | null; updatedAt: string; byUserId: string }
   >;
   appliedAt: Date;
+}
+
+export interface ShareLinkSummary {
+  token: string;
+  url: string;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  isActive: boolean;
 }

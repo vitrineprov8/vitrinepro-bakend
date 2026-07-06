@@ -490,9 +490,6 @@ export class SearchService implements OnModuleInit {
         dateTo: new Date(dto.dateTo),
       });
     }
-    if (dto.isService === true) {
-      qb.andWhere('p."isService" = true');
-    }
     if (dto.tagId) {
       qb.andWhere(
         `EXISTS (
@@ -567,10 +564,6 @@ export class SearchService implements OnModuleInit {
         year: item.year,
         projectStatus: item.projectStatus,
         status: item.status,
-        isService: item.isService,
-        serviceType: item.serviceType,
-        actionButton: item.actionButton,
-        servicePrice: item.servicePrice,
         tags: item.tags ?? [],
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
@@ -610,7 +603,7 @@ export class SearchService implements OnModuleInit {
     // Filters that only apply to portfolio items — profiles have no projectStatus/tags/coverImage.
     // When any of these are active, skip profile results entirely.
     const portfolioOnlyFilters =
-      dto.projectStatus || dto.tagId || dto.hasImage === true || dto.isService === true;
+      dto.projectStatus || dto.tagId || dto.hasImage === true;
 
     if (portfolioOnlyFilters) {
       return this.searchPortfolio(q, dto, page, limit);

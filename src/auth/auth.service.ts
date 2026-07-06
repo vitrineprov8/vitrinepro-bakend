@@ -18,6 +18,9 @@ import { MailService } from '../mail/mail.service';
 /** B2 — token expira 1h após a solicitação. */
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
+/** B17 — token de verificação de e-mail expira 24h após emitido/reenviado. */
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -75,6 +78,16 @@ export class AuthService {
 
     await this.tagsService.createDefaultTagsForUser(user.id);
 
+    // B17 — dispara verificação de e-mail em paralelo ao registro. Não é
+    // bloqueante: falha no envio não deve impedir o cadastro (mesmo padrão
+    // de resiliência do MailService usado em B2/B3).
+    const verificationToken = await this.issueEmailVerificationToken(user.id);
+    void this.mailService.sendEmailVerification(
+      user.email,
+      user.firstName,
+      verificationToken,
+    );
+
     const token = this.generateToken(user);
 
     return {
@@ -87,6 +100,12 @@ export class AuthService {
         lastName: user.lastName,
         personas: user.personas,
       },
+      // B17 — em dev/staging (sem inbox real disponível para QA), devolve o
+      // token no próprio response para permitir validar o fluxo completo.
+      // Nunca exposto em produção.
+      ...(process.env.NODE_ENV !== 'production'
+        ? { devEmailVerificationToken: verificationToken }
+        : {}),
     };
   }
 
@@ -187,6 +206,8 @@ export class AuthService {
       oauthId: oauthData.oauthId,
       avatarUrl: oauthData.avatarUrl,
       referralCode,
+      // B17 — provedor OAuth já validou o e-mail, não precisa de confirmação extra.
+      emailVerified: true,
     });
 
     await this.tagsService.createDefaultTagsForUser(user.id);
@@ -260,6 +281,78 @@ export class AuthService {
     await this.usersRepository.save(user);
 
     return { message: 'Senha redefinida com sucesso.' };
+  }
+
+  // ===== B17 — VERIFICAÇÃO DE E-MAIL =====
+
+  /** Gera, salva e retorna um token de verificação de e-mail (24h). */
+  private async issueEmailVerificationToken(userId: string): Promise<string> {
+    const token = randomBytes(24).toString('hex');
+    await this.usersRepository.update(userId, {
+      emailVerificationToken: token,
+      emailVerificationExpiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+    });
+    return token;
+  }
+
+  /**
+   * Confirma o e-mail a partir do token emailado no cadastro. Token é de uso
+   * único (limpo após sucesso) e expira em 24h — mesmo padrão de resetPassword.
+   */
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    const user = await this.usersRepository
+      .createQueryBuilder('u')
+      .addSelect(['u.emailVerificationToken', 'u.emailVerificationExpiresAt'])
+      .where('u.emailVerificationToken = :token', { token })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException('Token inválido ou expirado.');
+    }
+
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() < Date.now()
+    ) {
+      user.emailVerificationToken = null;
+      user.emailVerificationExpiresAt = null;
+      await this.usersRepository.save(user);
+      throw new GoneException('Token inválido ou expirado.');
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpiresAt = null;
+    await this.usersRepository.save(user);
+
+    return { message: 'E-mail confirmado com sucesso.' };
+  }
+
+  /**
+   * Reenvia o e-mail de confirmação para o usuário autenticado. Resposta
+   * genérica quando já verificado (idempotente, não é erro).
+   */
+  async resendEmailVerification(
+    userId: string,
+  ): Promise<{ message: string; devEmailVerificationToken?: string }> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (user.emailVerified) {
+      return { message: 'Este e-mail já está confirmado.' };
+    }
+
+    const token = await this.issueEmailVerificationToken(user.id);
+    await this.mailService.sendEmailVerification(user.email, user.firstName, token);
+
+    return {
+      message: 'E-mail de confirmação reenviado.',
+      ...(process.env.NODE_ENV !== 'production'
+        ? { devEmailVerificationToken: token }
+        : {}),
+    };
   }
 
   public generateToken(user: User) {

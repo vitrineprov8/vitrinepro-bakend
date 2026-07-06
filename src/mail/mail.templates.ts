@@ -77,6 +77,20 @@ export function passwordResetTemplate(link: string): MailContent {
   };
 }
 
+/** B17 — confirmação de e-mail após cadastro. Link expira em 24h. */
+export function emailVerificationTemplate(firstName: string, link: string): MailContent {
+  return {
+    subject: 'Confirme seu e-mail — VitrinePro',
+    html: layout(
+      'Confirme seu e-mail',
+      `Olá <strong>${firstName}</strong>, falta pouco! Confirme seu e-mail para ativar sua conta na VitrinePro.
+       O link expira em 24 horas.<br><br>
+       Se não foi você quem se cadastrou, pode ignorar esta mensagem.`,
+      { label: 'Confirmar e-mail', url: link },
+    ),
+  };
+}
+
 const TEAM_ROLE_LABEL: Record<string, string> = {
   OWNER: 'Proprietário(a)',
   MANAGER: 'Gerente',
@@ -133,6 +147,105 @@ export function verificationRejectedTemplate(
        <strong>Motivo:</strong> ${reason}<br><br>
        Você pode corrigir as informações e enviar novamente a qualquer momento.`,
       { label: 'Revisar meu perfil', url: profileUrl },
+    ),
+  };
+}
+
+// ── B9 — Placements (§P) ────────────────────────────────────────────────────
+
+/** P1 — empresa marcou o candidato indicado como contratado; hunter precisa confirmar. */
+export function placementHiredTemplate(
+  hunterFirstName: string,
+  vagaTitle: string,
+  hunterShareAmount: number,
+  deskUrl: string,
+): MailContent {
+  const fee = hunterShareAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return {
+    subject: `Placement em confirmação — ${vagaTitle}`,
+    html: layout(
+      'Placement em confirmação! 🎉',
+      `Olá <strong>${hunterFirstName}</strong>, a empresa marcou seu candidato indicado para <strong>${vagaTitle}</strong> como contratado.<br><br>
+       Sua parte do fee: <strong>${fee}</strong>. Confira os dados e confirme (ou conteste) — se não houver ação em 7 dias, o placement é confirmado automaticamente.`,
+      { label: 'Ver e confirmar', url: deskUrl },
+    ),
+  };
+}
+
+/** P2 — hunter confirmou (ou auto-confirmou) o placement; avisa a empresa. */
+export function placementConfirmedTemplate(
+  companyFirstName: string,
+  vagaTitle: string,
+  autoConfirmed: boolean,
+  guaranteeEndsAt: Date,
+  placementUrl: string,
+): MailContent {
+  const dateLabel = guaranteeEndsAt.toLocaleDateString('pt-BR');
+  return {
+    subject: `Placement confirmado — ${vagaTitle}`,
+    html: layout(
+      'Placement confirmado ✅',
+      `Olá <strong>${companyFirstName}</strong>, o placement de <strong>${vagaTitle}</strong> foi ${
+        autoConfirmed ? 'confirmado automaticamente (sem resposta em 7 dias)' : 'confirmado pelo hunter'
+      }.<br><br>
+       A garantia de 90 dias vai até <strong>${dateLabel}</strong>. Se o candidato sair antes disso, você pode solicitar reposição gratuita.`,
+      { label: 'Ver placement', url: placementUrl },
+    ),
+  };
+}
+
+/** P2 — hunter contestou os dados do placement; empresa e admin precisam revisar. */
+export function placementDisputedTemplate(
+  companyFirstName: string,
+  vagaTitle: string,
+  reason: string,
+  placementUrl: string,
+): MailContent {
+  return {
+    subject: `Placement contestado — ${vagaTitle}`,
+    html: layout(
+      'Placement contestado',
+      `Olá <strong>${companyFirstName}</strong>, o hunter contestou os dados do placement de <strong>${vagaTitle}</strong>.<br><br>
+       <strong>Motivo:</strong> ${reason}<br><br>
+       Nossa equipe vai analisar a disputa.`,
+      { label: 'Ver placement', url: placementUrl },
+    ),
+  };
+}
+
+/** P4 — empresa reportou saída do candidato dentro da garantia; hunter indica substituto. */
+export function placementGuaranteeBrokenTemplate(
+  hunterFirstName: string,
+  vagaTitle: string,
+  reason: string,
+  marketplaceUrl: string,
+): MailContent {
+  return {
+    subject: `Reposição necessária — ${vagaTitle}`,
+    html: layout(
+      'O candidato saiu — reposição gratuita',
+      `Olá <strong>${hunterFirstName}</strong>, a empresa informou que o candidato contratado para <strong>${vagaTitle}</strong> saiu dentro do período de garantia.<br><br>
+       <strong>Motivo informado:</strong> ${reason}<br><br>
+       Você pode indicar um novo candidato sem custo adicional para a empresa.`,
+      { label: 'Indicar substituto', url: marketplaceUrl },
+    ),
+  };
+}
+
+/** Fee liberado ao hunter — garantia expirou sem quebra. */
+export function placementFeeReleasedTemplate(
+  hunterFirstName: string,
+  vagaTitle: string,
+  hunterShareAmount: number,
+  deskUrl: string,
+): MailContent {
+  const fee = hunterShareAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return {
+    subject: `Fee liberado — ${vagaTitle} 💸`,
+    html: layout(
+      'Fee liberado! 💸',
+      `Boas notícias, <strong>${hunterFirstName}</strong>! A garantia do placement de <strong>${vagaTitle}</strong> expirou sem quebra e seu fee de <strong>${fee}</strong> foi liberado.`,
+      { label: 'Ver meus ganhos', url: deskUrl },
     ),
   };
 }

@@ -34,11 +34,6 @@ export class ProcessShareController {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  /**
-   * POST /applications/:id/share
-   * Generates a new share link for the given application.
-   * Only the vaga owner or admin may call this.
-   */
   @Post('applications/:id/share')
   @UseGuards(JwtAuthGuard)
   createShare(
@@ -49,10 +44,15 @@ export class ProcessShareController {
     return this.shareService.create(id, dto, req.user.id, req.user.role);
   }
 
-  /**
-   * DELETE /applications/:id/share/:token
-   * Revokes the share link (sets revokedAt = now).
-   */
+  @Get('applications/:id/share')
+  @UseGuards(JwtAuthGuard)
+  listShare(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string; role: UserRole } },
+  ) {
+    return this.shareService.listLinks(id, req.user.id, req.user.role);
+  }
+
   @Delete('applications/:id/share/:token')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -64,20 +64,11 @@ export class ProcessShareController {
     return this.shareService.revoke(id, token, req.user.id, req.user.role);
   }
 
-  /**
-   * GET /public/processo/:token
-   * Public (no auth) endpoint.  Returns a sanitised snapshot of the process.
-   */
   @Get('public/processo/:token')
   getPublicProcess(@Param('token') token: string) {
     return this.shareService.getPublicProcess(token);
   }
 
-  /**
-   * GET /applications/:id/pdf
-   * Generates and streams a PDF for the application.
-   * Requires auth and vaga ownership.
-   */
   @Get('applications/:id/pdf')
   @UseGuards(JwtAuthGuard)
   async downloadPdf(
@@ -85,7 +76,6 @@ export class ProcessShareController {
     @Request() req: { user: { id: string; role: UserRole } },
     @Res() res: Response,
   ): Promise<void> {
-    // Load application with all needed relations for PDF generation
     const app = await this.applicationsRepository.findOne({
       where: { id },
       relations: ['vaga', 'user'],
@@ -93,7 +83,6 @@ export class ProcessShareController {
 
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    // Authorization: vaga owner or admin
     if (
       app.vaga &&
       app.vaga.createdById !== req.user.id &&
@@ -102,7 +91,6 @@ export class ProcessShareController {
       throw new NotFoundException('Candidatura não encontrada.');
     }
 
-    // Build author map for stageHistory
     const userIds = [...new Set(app.stageHistory.map((e) => e.byUserId))];
     const authors = userIds.length
       ? await this.usersRepository.find({
@@ -114,7 +102,6 @@ export class ProcessShareController {
       authors.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
     );
 
-    // Get active share link for footer URL
     const activeLink = await this.shareService.getActiveLink(id);
 
     const pdfBuffer = await this.pdfService.generateApplicationPdf(

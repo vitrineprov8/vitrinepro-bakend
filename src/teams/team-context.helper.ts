@@ -6,45 +6,11 @@ import { TeamMember, TeamMemberStatus, TeamRole } from './team-member.entity';
 import { User } from '../users/user.entity';
 
 export interface TeamContext {
-  /**
-   * The team the user belongs to (as OWNER or ACTIVE member).
-   * null when the user is not part of any team.
-   */
   team: Team | null;
-
-  /**
-   * The role this user plays inside the team.
-   * null when `team` is null.
-   */
   role: TeamRole | null;
-
-  /**
-   * The User whose plan and quota should be charged / inspected.
-   *
-   *  - OWNER  → the owner themselves (quotaOwner === user)
-   *  - MANAGER/RECRUITER (ACTIVE) → the team owner
-   *  - No team → the user themselves
-   */
   quotaOwner: User;
 }
 
-/**
- * TeamContextHelper
- *
- * Centralised resolution of team membership context.
- * Injected by PlansService, VagasService, and CompaniesService so that the
- * "is this user a team member, and if so whose plan do they inherit?" logic
- * lives in exactly one place.
- *
- * Performance notes
- * -----------------
- * - Two targeted point-reads (findOne with indexed columns) — no table scans.
- * - `team.owner` is eagerly joined in a single query to avoid an N+1 when
- *   callers need `quotaOwner`.
- * - Results are NOT cached at the request level here; callers that need to
- *   call this multiple times within a single request should cache the result
- *   themselves.
- */
 @Injectable()
 export class TeamContextHelper {
   constructor(
@@ -56,31 +22,13 @@ export class TeamContextHelper {
     private usersRepository: Repository<User>,
   ) {}
 
-  /**
-   * Resolves the full team context for the given user, honouring
-   * `user.activeContextTeamId` (the ContextSwitcher toggle).
-   *
-   * Algorithm:
-   *  A. If `activeContextTeamId` is null → PERSONAL context.
-   *     Return { team: null, role: null, quotaOwner: user } immediately,
-   *     regardless of whether the user owns or belongs to a team.
-   *     This is the "Pessoal" toggle state.
-   *
-   *  B. If `activeContextTeamId` is set → TEAM context for that specific team.
-   *     1. Check if the user OWNS that team → role = OWNER, quotaOwner = user.
-   *     2. Check if the user is an ACTIVE member of that specific team →
-   *        role = their role, quotaOwner = the team owner's User record.
-   *     3. If neither (stale/invalid teamId) → fall back to solo context.
-   */
   async getTeamContext(user: User): Promise<TeamContext> {
-    // A. Personal context — honour the ContextSwitcher explicitly.
     if (!user.activeContextTeamId) {
       return { team: null, role: null, quotaOwner: user };
     }
 
     const targetTeamId = user.activeContextTeamId;
 
-    // B1. Is this user the OWNER of that specific team?
     const ownedTeam = await this.teamsRepository.findOne({
       where: { id: targetTeamId, ownerId: user.id },
     });
@@ -88,7 +36,6 @@ export class TeamContextHelper {
       return { team: ownedTeam, role: TeamRole.OWNER, quotaOwner: user };
     }
 
-    // B2. Is this user an ACTIVE member of that specific team?
     const membership = await this.teamMembersRepository
       .createQueryBuilder('tm')
       .innerJoinAndSelect('tm.team', 'team')
@@ -107,16 +54,9 @@ export class TeamContextHelper {
       };
     }
 
-    // B3. activeContextTeamId is stale/invalid — fall back to solo context.
     return { team: null, role: null, quotaOwner: user };
   }
 
-  /**
-   * Returns true if `user` is either the OWNER of `team` or an ACTIVE MANAGER
-   * in that team.
-   *
-   * Used by TeamsService to gate invite/remove/setRecruiters actions.
-   */
   async isOwnerOrManager(team: Team, user: User): Promise<boolean> {
     if (team.ownerId === user.id) return true;
 
@@ -132,12 +72,45 @@ export class TeamContextHelper {
     return member !== null;
   }
 
-  /**
-   * Returns all userIds that belong to the team the given `ownerId` owns,
-   * including the owner and all ACTIVE members (any role).
-   *
-   * Used by VagasService to build team-wide vaga lists.
-   */
+  async getTeamForUser(userId: string): Promise<Team | null> {
+    const ownedTeam = await this.teamsRepository.findOne({
+      where: { ownerId: userId },
+    });
+    if (ownedTeam) return ownedTeam;
+
+    const membership = await this.teamMembersRepository
+      .createQueryBuilder('tm')
+      .innerJoinAndSelect('tm.team', 'team')
+      .where('tm.userId = :userId', { userId })
+      .andWhere('tm.status = :status', { status: TeamMemberStatus.ACTIVE })
+      .getOne();
+
+    return membership?.team ?? null;
+  }
+
+  async canManageAsTeamLead(
+    vagaCreatorId: string,
+    actorId: string,
+  ): Promise<boolean> {
+    if (!vagaCreatorId || vagaCreatorId === actorId) return false;
+
+    const team = await this.getTeamForUser(vagaCreatorId);
+    if (!team) return false;
+
+    if (team.ownerId === actorId) return true;
+
+    const managerMembership = await this.teamMembersRepository.findOne({
+      where: {
+        teamId: team.id,
+        userId: actorId,
+        status: TeamMemberStatus.ACTIVE,
+        role: TeamRole.MANAGER,
+      },
+    });
+
+    return managerMembership !== null;
+  }
+
   async getTeamUserIds(ownerId: string): Promise<string[]> {
     const team = await this.teamsRepository.findOne({
       where: { ownerId },
@@ -153,7 +126,6 @@ export class TeamContextHelper {
       .map((m) => m.userId)
       .filter((id): id is string => id !== null);
 
-    // Always include the owner even if somehow not in team_members
     if (!ids.includes(ownerId)) ids.push(ownerId);
 
     return ids;

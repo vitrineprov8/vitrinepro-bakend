@@ -163,6 +163,13 @@ export class VagasService {
         'vaga.publishedAt',
         'DESC',
       );
+    } else if (order === 'salary') {
+      // B21 — maior salário primeiro; usa salaryMax (teto da faixa) com fallback
+      // implícito por NULLS LAST para não empurrar vagas sem faixa declarada pro topo.
+      qb.orderBy('vaga.salaryMax', 'DESC', 'NULLS LAST').addOrderBy(
+        'vaga.publishedAt',
+        'DESC',
+      );
     } else {
       qb.orderBy('vaga.publishedAt', 'DESC');
     }

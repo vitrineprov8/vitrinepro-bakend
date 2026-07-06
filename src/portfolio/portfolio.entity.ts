@@ -77,27 +77,10 @@ export class PortfolioItem {
   @Column({ type: 'varchar', length: 500, nullable: true })
   externalUrl: string | null;
 
-  // --- Service offering fields ---
-
-  /** When true, this item represents a service rather than a portfolio work. */
-  @Column({ type: 'boolean', default: false })
-  isService: boolean;
-
-  /** Category of service: e.g. "Agendamento", "Orçamento", "Projeto", "Venda Unitária", "Venda Pacote". */
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  serviceType: string | null;
-
-  /** CTA button label: e.g. "EU QUERO", "AGENDAR", "SAIBA MAIS", "CONVERSAR", "WHATSAPP", "VEJA SITE". */
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  actionButton: string | null;
-
-  /** Service price in BRL (e.g. 250.00). */
-  @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
-  servicePrice: number | null;
-
-  /** Number of days to keep the service listing active (max 30). */
-  @Column({ type: 'int', nullable: true })
-  publicationDurationDays: number | null;
+  // B16 — campos de "Service offering" (isService/serviceType/actionButton/
+  // servicePrice/publicationDurationDays) removidos em 2026-07-06: nunca teve
+  // UI no frontend (zero usos confirmados via grep) e não é usado em nenhum
+  // fluxo real. Ver migração `1749500000000-b16-cleanup-service-fields` (drop).
 
   /**
    * When true, this item is highlighted as "MAIS CONTRATADO" on the public profile.

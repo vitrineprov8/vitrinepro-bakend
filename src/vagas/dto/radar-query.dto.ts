@@ -55,8 +55,9 @@ export class RadarQueryDto extends PaginationDto {
    *   recent     — most recently published first (default)
    *   relevance  — title matches ranked above description matches, then by publishedAt
    *   fee        — B4: maior feeAmount primeiro (nulls por último) — marketplace de hunters
+   *   salary     — B21: maior salaryMax primeiro (nulls por último) — resto do T05
    */
   @IsOptional()
-  @IsEnum(['recent', 'relevance', 'fee'])
-  order?: 'recent' | 'relevance' | 'fee';
+  @IsEnum(['recent', 'relevance', 'fee', 'salary'])
+  order?: 'recent' | 'relevance' | 'fee' | 'salary';
 }

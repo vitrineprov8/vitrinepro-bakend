@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { databaseConfig } from './database/database.config';
@@ -33,11 +35,19 @@ import { SeoModule } from './seo/seo.module';
 import { StatsModule } from './stats/stats.module';
 import { MailModule } from './mail/mail.module';
 import { HuntersModule } from './hunters/hunters.module';
+import { PlacementsModule } from './placements/placements.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
     MailModule,
     StorageModule,
     UsersModule,
@@ -66,9 +76,13 @@ import { HuntersModule } from './hunters/hunters.module';
     SeoModule,
     StatsModule,
     HuntersModule,
+    PlacementsModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

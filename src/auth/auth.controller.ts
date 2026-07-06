@@ -1,9 +1,15 @@
 import { Controller, Post, Body, UseGuards, Get, Request, HttpCode, HttpStatus, Res, Req, Param } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleAuthGuard } from './google-auth.guard';
 import { LinkedInAuthGuard } from './linkedin-auth.guard';
+
+// B20 — throttle estrito nas rotas mais visadas por brute-force/enumeração
+// (login, registro, forgot-password): 5 tentativas por minuto por IP,
+// bem abaixo do limite 'default' global de 100/min do ThrottlerModule.
+const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 @Controller('auth')
 export class AuthController {
@@ -11,6 +17,7 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle(AUTH_THROTTLE)
   async register(
     @Body()
     registerDto: {
@@ -29,6 +36,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle(AUTH_THROTTLE)
   async login(
     @Body() loginDto: { email: string; password: string },
   ) {
@@ -38,6 +46,7 @@ export class AuthController {
   // ===== B2 — RESET DE SENHA =====
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle(AUTH_THROTTLE)
   async forgotPassword(@Body() dto: { email: string }) {
     return this.authService.forgotPassword(dto.email);
   }
@@ -49,6 +58,20 @@ export class AuthController {
     @Body() dto: { password: string },
   ) {
     return this.authService.resetPassword(token, dto.password);
+  }
+
+  // ===== B17 — VERIFICAÇÃO DE E-MAIL =====
+  @Post('verify-email/:token')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Param('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async resendVerification(@Request() req) {
+    return this.authService.resendEmailVerification(req.user.id);
   }
 
   @Get('profile')

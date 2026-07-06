@@ -12,6 +12,7 @@ import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 import { User, UserRole } from '../users/user.entity';
 import { PipelineTemplate } from '../pipeline-templates/pipeline-template.entity';
+import { TeamContextHelper } from '../teams/team-context.helper';
 import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
@@ -30,7 +31,25 @@ export class VagaApplicationsService {
     private usersRepository: Repository<User>,
     @InjectRepository(PipelineTemplate)
     private pipelineTemplatesRepository: Repository<PipelineTemplate>,
+    private teamContextHelper: TeamContextHelper,
   ) {}
+
+  private async assertCanManageVaga(
+    vagaCreatedById: string | null,
+    actorId: string,
+    actorRole: UserRole,
+    forbiddenMessage: string,
+  ): Promise<void> {
+    if (actorRole === UserRole.ADMIN) return;
+    if (vagaCreatedById === actorId) return;
+
+    const isTeamLead =
+      !!vagaCreatedById &&
+      (await this.teamContextHelper.canManageAsTeamLead(vagaCreatedById, actorId));
+    if (isTeamLead) return;
+
+    throw new ForbiddenException(forbiddenMessage);
+  }
 
   async apply(
     userId: string,
@@ -65,14 +84,12 @@ export class VagaApplicationsService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
-    // Company accounts cannot apply to vagas as candidates
     if (user.isCompany) {
       throw new ForbiddenException(
         'Contas empresariais não podem se candidatar a vagas. Use uma conta de profissional.',
       );
     }
 
-    // Sync empty profile fields with data provided in the application
     const profileUpdates: Partial<User> = {};
     if (!user.phone && dto.phone) profileUpdates.phone = dto.phone;
     if (!user.location && dto.location) profileUpdates.location = dto.location;
@@ -94,7 +111,6 @@ export class VagaApplicationsService {
       snapshotEmail: dto.email,
       snapshotPhone: dto.phone ?? null,
       snapshotLocation: dto.location ?? null,
-      // New pipeline fields — application starts at the first default stage
       pipelineStage: 'para_analisar',
       isRejected: false,
     });
@@ -129,10 +145,6 @@ export class VagaApplicationsService {
     }));
   }
 
-  /**
-   * Lists applications for a vaga.
-   * Enforces ownership: only the vaga creator or an admin may view applications.
-   */
   async listByVaga(
     vagaId: string,
     actorId: string,
@@ -141,11 +153,12 @@ export class VagaApplicationsService {
     const vaga = await this.vagasRepository.findOne({ where: { id: vagaId } });
     if (!vaga) throw new NotFoundException('Vaga não encontrada.');
 
-    if (vaga.createdById !== actorId && actorRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(
-        'Você não tem permissão para ver as candidaturas desta vaga.',
-      );
-    }
+    await this.assertCanManageVaga(
+      vaga.createdById,
+      actorId,
+      actorRole,
+      'Você não tem permissão para ver as candidaturas desta vaga.',
+    );
 
     const apps = await this.applicationsRepository.find({
       where: { vagaId },
@@ -153,10 +166,6 @@ export class VagaApplicationsService {
       order: { createdAt: 'DESC' },
     });
 
-    // B4 — RN-NOVA-03: contato de candidatos submetidos por hunter (source=HUNTER)
-    // fica mascarado até a candidatura atingir a etapa configurada pelo dono da
-    // vaga (`User.hunterContactRevealStageOrder`, default 2). Resolvido com no
-    // máximo 2 queries extras (owner + template), nunca por linha.
     const hasHunterApp = apps.some((a) => a.source === ApplicationSource.HUNTER);
     let revealThreshold = 2;
     let stageOrderById = new Map<string, number>();
@@ -187,12 +196,13 @@ export class VagaApplicationsService {
         isRejected: a.isRejected,
         message: a.message,
         snapshotFullName: a.snapshotFullName,
-        // RN-NOVA-03: mascara e-mail/telefone de candidatos de hunter até a
-        // etapa de liberação configurada pelo dono da vaga.
         snapshotEmail: contactMasked ? null : a.snapshotEmail,
         snapshotPhone: contactMasked ? null : a.snapshotPhone,
         snapshotLocation: a.snapshotLocation,
         contactMasked,
+        generalScore: a.generalScore,
+        generalNote: a.generalNote,
+        stageNotes: a.stageNotes,
         createdAt: a.createdAt,
         cv: a.cv
           ? { id: a.cv.id, label: a.cv.label, fileUrl: a.cv.fileUrl }
@@ -210,11 +220,6 @@ export class VagaApplicationsService {
     });
   }
 
-  /**
-   * Removes an application — only the applicant (application.userId) may call this.
-   * Hard delete: the application row is permanently removed.
-   * Returns void; controller responds 204.
-   */
   async removeApplication(applicationId: string, actorId: string): Promise<void> {
     const app = await this.applicationsRepository.findOne({
       where: { id: applicationId },
@@ -234,13 +239,6 @@ export class VagaApplicationsService {
     await this.applicationsRepository.remove(app);
   }
 
-  /**
-   * Updates the pipeline stage (and/or isRejected flag) of an application.
-   * Enforces ownership: only the vaga creator or an admin may change stage.
-   *
-   * At least one of dto.pipelineStage / dto.isRejected must be provided
-   * (enforced by the DTO validator and the guard below).
-   */
   async updateStatus(
     id: string,
     dto: UpdateStatusDto,
@@ -259,18 +257,16 @@ export class VagaApplicationsService {
     });
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    if (
-      app.vaga &&
-      app.vaga.createdById !== actorId &&
-      actorRole !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException(
+    if (app.vaga) {
+      await this.assertCanManageVaga(
+        app.vaga.createdById,
+        actorId,
+        actorRole,
         'Você não tem permissão para atualizar esta candidatura.',
       );
     }
 
     if (dto.pipelineStage !== undefined) {
-      // Only append to stageHistory when the stage actually changes
       if (app.pipelineStage !== dto.pipelineStage) {
         const historyEntry: VagaApplication['stageHistory'][number] = {
           stage: dto.pipelineStage,
@@ -288,12 +284,6 @@ export class VagaApplicationsService {
     return this.applicationsRepository.save(app);
   }
 
-  // ── Phase 3: general score / note ─────────────────────────────────────────
-
-  /**
-   * Updates the recruiter's general evaluation fields.
-   * Only the vaga creator or admin may call this.
-   */
   async updateGeneral(
     id: string,
     dto: UpdateGeneralDto,
@@ -312,12 +302,11 @@ export class VagaApplicationsService {
     });
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    if (
-      app.vaga &&
-      app.vaga.createdById !== actorId &&
-      actorRole !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException(
+    if (app.vaga) {
+      await this.assertCanManageVaga(
+        app.vaga.createdById,
+        actorId,
+        actorRole,
         'Você não tem permissão para avaliar esta candidatura.',
       );
     }
@@ -328,12 +317,6 @@ export class VagaApplicationsService {
     return this.applicationsRepository.save(app);
   }
 
-  // ── Phase 3: per-stage notes ──────────────────────────────────────────────
-
-  /**
-   * Creates or merges notes for a specific pipeline stage.
-   * Stored in stageNotes[stageKey] as { observacoes, nota, updatedAt, byUserId }.
-   */
   async updateStageNotes(
     id: string,
     stageKey: string,
@@ -347,12 +330,11 @@ export class VagaApplicationsService {
     });
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    if (
-      app.vaga &&
-      app.vaga.createdById !== actorId &&
-      actorRole !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException(
+    if (app.vaga) {
+      await this.assertCanManageVaga(
+        app.vaga.createdById,
+        actorId,
+        actorRole,
         'Você não tem permissão para anotar nesta candidatura.',
       );
     }
@@ -378,12 +360,6 @@ export class VagaApplicationsService {
     return this.applicationsRepository.save(app);
   }
 
-  // ── Phase 3: stage history ────────────────────────────────────────────────
-
-  /**
-   * Returns stageHistory in reverse-chronological order, enriched with the
-   * author's full name resolved via a single bulk query.
-   */
   async getHistory(
     id: string,
     actorId: string,
@@ -396,12 +372,11 @@ export class VagaApplicationsService {
     });
     if (!app) throw new NotFoundException('Candidatura não encontrada.');
 
-    if (
-      app.vaga &&
-      app.vaga.createdById !== actorId &&
-      actorRole !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException(
+    if (app.vaga) {
+      await this.assertCanManageVaga(
+        app.vaga.createdById,
+        actorId,
+        actorRole,
         'Você não tem permissão para ver o histórico desta candidatura.',
       );
     }
