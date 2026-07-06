@@ -17,6 +17,8 @@ import { MailService } from '../mail/mail.service';
 import { HuntersQueryDto } from './dto/hunters-query.dto';
 import { SubmitVerificationDto } from './dto/submit-verification.dto';
 import { RejectVerificationDto } from './dto/reject-verification.dto';
+import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 
 /** B5 — campos públicos de um card do diretório `GET /hunters` (T07). */
 export interface HunterDirectoryCard {
@@ -75,6 +77,7 @@ export class HuntersService {
     private vagaApplicationsRepository: Repository<VagaApplication>,
     private storageService: StorageService,
     private mailService: MailService,
+    private adminAuditLogService: AdminAuditLogService,
   ) {}
 
   /** T07 — diretório público de hunters, com filtros e paginação. */
@@ -312,24 +315,39 @@ export class HuntersService {
   }
 
   /** Admin — aprova o pedido: ativa o selo "Verificado" e libera o marketplace. */
-  async adminApprove(userId: string): Promise<{ verificationStatus: HunterVerificationStatus }> {
+  async adminApprove(
+    userId: string,
+    adminId: string,
+  ): Promise<{ verificationStatus: HunterVerificationStatus }> {
     const user = await this.findUserOrFail(userId);
     if (user.verificationStatus !== HunterVerificationStatus.PENDING) {
       throw new BadRequestException('Este pedido não está pendente de análise.');
     }
 
+    const statusBefore = user.verificationStatus;
     user.verificationStatus = HunterVerificationStatus.APPROVED;
     user.verificationDecidedAt = new Date();
     user.verificationRejectionReason = null;
     await this.usersRepository.save(user);
 
     void this.mailService.sendVerificationApproved(user.email, user.firstName);
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.HUNTER_VERIFICATION_APPROVE,
+      targetType: 'User',
+      targetId: user.id,
+      payloadBefore: { verificationStatus: statusBefore },
+      payloadAfter: { verificationStatus: user.verificationStatus },
+    });
+
     return { verificationStatus: user.verificationStatus };
   }
 
   /** Admin — recusa o pedido, com motivo mostrado ao hunter. */
   async adminReject(
     userId: string,
+    adminId: string,
     dto: RejectVerificationDto,
   ): Promise<{ verificationStatus: HunterVerificationStatus }> {
     const user = await this.findUserOrFail(userId);
@@ -337,6 +355,7 @@ export class HuntersService {
       throw new BadRequestException('Este pedido não está pendente de análise.');
     }
 
+    const statusBefore = user.verificationStatus;
     user.verificationStatus = HunterVerificationStatus.REJECTED;
     user.verificationDecidedAt = new Date();
     user.verificationRejectionReason = dto.reason;
@@ -347,6 +366,17 @@ export class HuntersService {
       user.firstName,
       dto.reason,
     );
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.HUNTER_VERIFICATION_REJECT,
+      targetType: 'User',
+      targetId: user.id,
+      reason: dto.reason,
+      payloadBefore: { verificationStatus: statusBefore },
+      payloadAfter: { verificationStatus: user.verificationStatus },
+    });
+
     return { verificationStatus: user.verificationStatus };
   }
 

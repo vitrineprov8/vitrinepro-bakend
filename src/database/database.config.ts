@@ -22,6 +22,7 @@ import { HunterCandidate } from '../hunter-candidates/hunter-candidate.entity';
 import { ProcessShareLink } from '../process-share/process-share-link.entity';
 import { SlugTombstone } from '../seo/slug-tombstone.entity';
 import { Placement } from '../placements/placement.entity';
+import { AdminAuditLog } from '../admin-audit-log/admin-audit-log.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -53,6 +54,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     ProcessShareLink,
     SlugTombstone,
     Placement,
+    AdminAuditLog,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

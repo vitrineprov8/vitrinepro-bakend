@@ -14,8 +14,7 @@ import {
   PlacementStatus,
   PLACEMENT_AUTO_CONFIRM_DAYS,
   PLACEMENT_GUARANTEE_DAYS,
-  PLACEMENT_HUNTER_SHARE,
-  PLACEMENT_PLATFORM_SHARE,
+  DEFAULT_PLATFORM_SHARE_PERCENT,
 } from './placement.entity';
 import { VagaApplication, ApplicationSource } from '../vaga-applications/vaga-application.entity';
 import { Vaga } from '../vagas/vaga.entity';
@@ -26,6 +25,9 @@ import { MarkHiredDto } from './dto/mark-hired.dto';
 import { ContestPlacementDto } from './dto/contest-placement.dto';
 import { ReportDepartureDto } from './dto/report-departure.dto';
 import { ResolveDisputeDto, DisputeResolution } from './dto/resolve-dispute.dto';
+import { UpdatePlacementSplitDto } from './dto/update-placement-split.dto';
+import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,9 +46,9 @@ export class PlacementsService {
     private usersRepository: Repository<User>,
     private teamContextHelper: TeamContextHelper,
     private mailService: MailService,
+    private adminAuditLogService: AdminAuditLogService,
   ) {}
 
-  /** Same delegation rule as VagaApplicationsService (B15): dono da vaga, ADMIN, ou líder do time do dono. */
   private async assertCanManageVaga(
     vagaCreatedById: string | null,
     actorId: string,
@@ -74,7 +76,16 @@ export class PlacementsService {
     return 0;
   }
 
-  // ── P1 — Marcar contratado ────────────────────────────────────────────────
+  private async resolvePlatformSharePercent(vagaCreatedById: string | null): Promise<number> {
+    if (!vagaCreatedById) return DEFAULT_PLATFORM_SHARE_PERCENT;
+
+    const owner = await this.usersRepository.findOne({
+      where: { id: vagaCreatedById },
+      select: ['id', 'placementPlatformSharePercent'],
+    });
+
+    return owner?.placementPlatformSharePercent ?? DEFAULT_PLATFORM_SHARE_PERCENT;
+  }
 
   async markHired(
     applicationId: string,
@@ -143,12 +154,17 @@ export class PlacementsService {
 
     if (isHunterSourced) {
       const feeAmount = this.computeFee(application.vaga, dto.finalSalary);
+      const platformSharePercent = await this.resolvePlatformSharePercent(
+        application.vaga.createdById,
+      );
+      const hunterSharePercent = 100 - platformSharePercent;
+
       placement.feeAmount = feeAmount;
-      placement.hunterShareAmount = Math.round(feeAmount * PLACEMENT_HUNTER_SHARE * 100) / 100;
-      placement.platformShareAmount = Math.round(feeAmount * PLACEMENT_PLATFORM_SHARE * 100) / 100;
+      placement.hunterShareAmount = Math.round(feeAmount * (hunterSharePercent / 100) * 100) / 100;
+      placement.platformShareAmount = Math.round(feeAmount * (platformSharePercent / 100) * 100) / 100;
+      placement.platformSharePercentApplied = platformSharePercent;
       placement.status = PlacementStatus.HIRED;
     } else {
-      // Contratação direta (sem hunter): sem fee/garantia, já nasce confirmada.
       placement.status = PlacementStatus.CONFIRMED;
       placement.confirmedAt = new Date();
     }
@@ -175,8 +191,6 @@ export class PlacementsService {
 
     return saved;
   }
-
-  // ── P2 — Confirmação bilateral ────────────────────────────────────────────
 
   async confirm(placementId: string, actorId: string, actorRole: UserRole): Promise<Placement> {
     const placement = await this.loadWithVaga(placementId);
@@ -258,9 +272,9 @@ export class PlacementsService {
     return saved;
   }
 
-  /** A3 — admin resolve uma disputa: confirma (segue o fluxo normal) ou cancela o placement. */
   async resolveDispute(
     placementId: string,
+    actorId: string,
     actorRole: UserRole,
     dto: ResolveDisputeDto,
   ): Promise<Placement> {
@@ -273,18 +287,31 @@ export class PlacementsService {
       throw new BadRequestException('Este placement não está em disputa.');
     }
 
+    const statusBefore = placement.status;
+
+    let saved: Placement;
     if (dto.resolution === DisputeResolution.CONFIRM) {
       placement.disputeResolvedAt = new Date();
       await this.placementsRepository.save(placement);
-      return this.applyConfirmation(placement, { autoConfirmed: false });
+      saved = await this.applyConfirmation(placement, { autoConfirmed: false });
+    } else {
+      placement.status = PlacementStatus.CANCELLED;
+      placement.disputeResolvedAt = new Date();
+      saved = await this.placementsRepository.save(placement);
     }
 
-    placement.status = PlacementStatus.CANCELLED;
-    placement.disputeResolvedAt = new Date();
-    return this.placementsRepository.save(placement);
-  }
+    void this.adminAuditLogService.record({
+      adminId: actorId,
+      action: AdminAuditAction.PLACEMENT_DISPUTE_RESOLVE,
+      targetType: 'Placement',
+      targetId: placement.id,
+      reason: dto.note ?? null,
+      payloadBefore: { status: statusBefore },
+      payloadAfter: { status: saved.status, resolution: dto.resolution },
+    });
 
-  // ── P4 — Quebra de garantia / reposição ───────────────────────────────────
+    return saved;
+  }
 
   async reportDeparture(
     placementId: string,
@@ -334,8 +361,6 @@ export class PlacementsService {
 
     return saved;
   }
-
-  // ── P3 — Timeline ─────────────────────────────────────────────────────────
 
   async getTimeline(
     placementId: string,
@@ -394,8 +419,6 @@ export class PlacementsService {
     return { placement, steps };
   }
 
-  // ── Listagens ─────────────────────────────────────────────────────────────
-
   async listForHunter(hunterId: string): Promise<Placement[]> {
     return this.placementsRepository.find({
       where: { hunterId },
@@ -429,11 +452,6 @@ export class PlacementsService {
     return placement;
   }
 
-  // ── Crons (§P2 auto-confirm 7d / garantia 90d) ────────────────────────────
-  // Rodam diariamente. Idempotentes — só afetam linhas que já cruzaram o
-  // limiar de tempo, então rodar mais de uma vez no mesmo dia não tem efeito
-  // colateral.
-
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async autoConfirmDueSweep(): Promise<void> {
     await this.runAutoConfirmSweep();
@@ -444,10 +462,6 @@ export class PlacementsService {
     await this.runFeeReleaseSweep();
   }
 
-  /**
-   * P2 — auto-confirm: qualquer placement HIRED criado há mais de 7 dias é
-   * confirmado automaticamente (o hunter não respondeu a tempo).
-   */
   async runAutoConfirmSweep(): Promise<number> {
     const threshold = new Date(Date.now() - PLACEMENT_AUTO_CONFIRM_DAYS * DAY_MS);
     const due = await this.placementsRepository.find({
@@ -467,9 +481,6 @@ export class PlacementsService {
     return overdue.length;
   }
 
-  /**
-   * Garantia expirada sem quebra → libera o fee ao hunter.
-   */
   async runFeeReleaseSweep(): Promise<number> {
     const now = new Date();
     const candidates = await this.placementsRepository.find({
@@ -498,14 +509,6 @@ export class PlacementsService {
     return overdue.length;
   }
 
-  /**
-   * QA-only — força a transição de tempo (auto-confirm 7d / liberação de fee
-   * 90d) de UM placement específico, ignorando o limiar de data. Existe só
-   * para permitir validar de ponta a ponta (HTTP real, sem mock) a mecânica
-   * das duas transições cron-based sem esperar os dias reais se passarem —
-   * mesmo espírito do "token em dev" já usado em B3/B7/B17. Bloqueado em
-   * produção e restrito a ADMIN (ver guard no controller).
-   */
   async qaForceAdvance(placementId: string): Promise<Placement> {
     const placement = await this.loadWithVaga(placementId);
 
@@ -535,5 +538,115 @@ export class PlacementsService {
     throw new BadRequestException(
       `Não há transição de tempo pendente para o status atual (${placement.status}).`,
     );
+  }
+
+  async adminListCompanies(
+    page: number,
+    limit: number,
+  ): Promise<{
+    data: Array<{
+      id: string;
+      companyName: string | null;
+      email: string;
+      plan: string;
+      vagasCount: number;
+      placementsCount: number;
+      platformSharePercent: number;
+      isCustomSplit: boolean;
+    }>;
+    total: number;
+    page: number;
+    lastPage: number;
+  }> {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safePage = Math.max(page, 1);
+    const skip = (safePage - 1) * safeLimit;
+
+    const [companies, total] = await this.usersRepository.findAndCount({
+      where: { isCompany: true },
+      select: ['id', 'companyName', 'email', 'plan', 'placementPlatformSharePercent'],
+      order: { companyName: 'ASC' },
+      skip,
+      take: safeLimit,
+    });
+
+    const data = await Promise.all(
+      companies.map(async (c) => {
+        const vagasCount = await this.vagasRepository.count({ where: { createdById: c.id } });
+        const placementsCount = await this.placementsRepository
+          .createQueryBuilder('p')
+          .innerJoin('p.vaga', 'vaga')
+          .where('vaga.createdById = :ownerId', { ownerId: c.id })
+          .getCount();
+
+        return {
+          id: c.id,
+          companyName: c.companyName,
+          email: c.email,
+          plan: c.plan,
+          vagasCount,
+          placementsCount,
+          platformSharePercent: c.placementPlatformSharePercent ?? DEFAULT_PLATFORM_SHARE_PERCENT,
+          isCustomSplit: c.placementPlatformSharePercent !== null,
+        };
+      }),
+    );
+
+    return { data, total, page: safePage, lastPage: Math.ceil(total / safeLimit) };
+  }
+
+  async adminUpdatePlacementSplit(
+    companyId: string,
+    adminId: string,
+    dto: UpdatePlacementSplitDto,
+  ): Promise<{
+    id: string;
+    platformSharePercent: number;
+    placementSplitHistory: User['placementSplitHistory'];
+  }> {
+    const company = await this.usersRepository.findOne({ where: { id: companyId } });
+    if (!company) throw new NotFoundException('Empresa não encontrada.');
+    if (!company.isCompany) {
+      throw new BadRequestException('Esta conta não é uma conta empresa.');
+    }
+
+    const previousPercent = company.placementPlatformSharePercent;
+
+    company.placementPlatformSharePercent = dto.platformSharePercent;
+    company.placementSplitHistory = [
+      ...(company.placementSplitHistory ?? []),
+      {
+        changedAt: new Date().toISOString(),
+        changedByAdminId: adminId,
+        previousPercent,
+        newPercent: dto.platformSharePercent,
+        reason: dto.reason,
+      },
+    ];
+
+    const saved = await this.usersRepository.save(company);
+
+    void this.mailService.sendPlacementSplitChanged(
+      saved.email,
+      saved.companyName ?? saved.firstName,
+      dto.platformSharePercent,
+      dto.reason,
+    );
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.PLACEMENT_SPLIT_UPDATE,
+      targetType: 'User',
+      targetId: saved.id,
+      reason: dto.reason,
+      payloadBefore: { platformSharePercent: previousPercent },
+      payloadAfter: { platformSharePercent: dto.platformSharePercent },
+    });
+
+    return {
+      id: saved.id,
+      platformSharePercent: saved.placementPlatformSharePercent as number,
+      placementSplitHistory: saved.placementSplitHistory,
+    };
   }
 }

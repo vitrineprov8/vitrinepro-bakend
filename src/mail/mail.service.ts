@@ -12,6 +12,7 @@ import {
   placementDisputedTemplate,
   placementGuaranteeBrokenTemplate,
   placementFeeReleasedTemplate,
+  placementSplitChangedTemplate,
   type MailContent,
 } from './mail.templates';
 
@@ -29,16 +30,6 @@ export interface SendMailResult {
   error?: string;
 }
 
-/**
- * B14 — E-mail transacional via Resend (https://resend.com).
- *
- * Usa a API REST do Resend por `fetch` (Node 18+/22), sem dependência nova.
- * Se `RESEND_API_KEY` não estiver definido, cai no modo STUB: apenas loga o
- * e-mail (comportamento de dev anterior), sem quebrar o fluxo chamador.
- *
- * Nunca lança: falha de envio é logada e retornada em `{ sent:false }`, pois
- * um e-mail que falha não deve derrubar a request de negócio.
- */
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -100,9 +91,6 @@ export class MailService {
     return this.send({ to, subject: tpl.subject, html: tpl.html });
   }
 
-  // ── Conveniências por caso de uso ───────────────────────────────────────────
-
-  /** B3 — pede consentimento LGPD ao candidato, com link para a página pública. */
   sendConsentRequest(
     to: string,
     candidateName: string,
@@ -119,13 +107,11 @@ export class MailService {
     );
   }
 
-  /** B2 — link de redefinição de senha (usar quando o fluxo real for ligado). */
   sendPasswordReset(to: string, token: string): Promise<SendMailResult> {
     const link = `${this.frontendUrl}/redefinir-senha/${token}`;
     return this.sendTemplate(to, passwordResetTemplate(link));
   }
 
-  /** B17 — confirmação de e-mail após cadastro (link para /verificar-email/:token). */
   sendEmailVerification(
     to: string,
     firstName: string,
@@ -135,7 +121,6 @@ export class MailService {
     return this.sendTemplate(to, emailVerificationTemplate(firstName, link));
   }
 
-  /** B7 — convite de time (link para a página pública /convite/:token). */
   sendTeamInvite(
     to: string,
     teamName: string,
@@ -150,13 +135,11 @@ export class MailService {
     );
   }
 
-  /** B8 — verificação de hunter aprovada. */
   sendVerificationApproved(to: string, firstName: string): Promise<SendMailResult> {
     const link = `${this.frontendUrl}/app/hunter/marketplace`;
     return this.sendTemplate(to, verificationApprovedTemplate(firstName, link));
   }
 
-  /** B8 — verificação de hunter recusada, com motivo. */
   sendVerificationRejected(
     to: string,
     firstName: string,
@@ -169,9 +152,6 @@ export class MailService {
     );
   }
 
-  // ── B9 — Placements ────────────────────────────────────────────────────────
-
-  /** P1 — empresa marcou o candidato indicado como contratado; hunter precisa confirmar. */
   sendPlacementHired(
     to: string,
     hunterFirstName: string,
@@ -185,7 +165,6 @@ export class MailService {
     );
   }
 
-  /** P2 — hunter confirmou (ou auto-confirm 7d); avisa a empresa. */
   sendPlacementConfirmed(
     to: string,
     companyFirstName: string,
@@ -207,7 +186,6 @@ export class MailService {
     );
   }
 
-  /** P2 — hunter contestou os dados; avisa a empresa. */
   sendPlacementDisputed(
     to: string,
     companyFirstName: string,
@@ -222,7 +200,6 @@ export class MailService {
     );
   }
 
-  /** P4 — quebra de garantia; hunter é notificado para indicar substituto. */
   sendPlacementGuaranteeBroken(
     to: string,
     hunterFirstName: string,
@@ -236,7 +213,6 @@ export class MailService {
     );
   }
 
-  /** Garantia expirou sem quebra — fee liberado ao hunter. */
   sendPlacementFeeReleased(
     to: string,
     hunterFirstName: string,
@@ -247,6 +223,18 @@ export class MailService {
     return this.sendTemplate(
       to,
       placementFeeReleasedTemplate(hunterFirstName, vagaTitle, hunterShareAmount, link),
+    );
+  }
+
+  sendPlacementSplitChanged(
+    to: string,
+    companyName: string,
+    newPlatformSharePercent: number,
+    reason: string,
+  ): Promise<SendMailResult> {
+    return this.sendTemplate(
+      to,
+      placementSplitChangedTemplate(companyName, newPlatformSharePercent, reason),
     );
   }
 }

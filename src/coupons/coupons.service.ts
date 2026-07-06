@@ -8,6 +8,8 @@ import { IsNull, Repository } from 'typeorm';
 import { Coupon, DiscountType } from './coupon.entity';
 import { CouponRedemption, RedemptionStatus } from './coupon-redemption.entity';
 import { User, PlanTier, PlanStatus } from '../users/user.entity';
+import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 
 @Injectable()
 export class CouponsService {
@@ -18,6 +20,7 @@ export class CouponsService {
     private redemptionsRepository: Repository<CouponRedemption>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private adminAuditLogService: AdminAuditLogService,
   ) {}
 
   /**
@@ -173,6 +176,15 @@ export class CouponsService {
       await this.usersRepository.save(owner);
     }
 
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.COUPON_REDEMPTION_VALIDATE,
+      targetType: 'CouponRedemption',
+      targetId: redemption.id,
+      payloadBefore: { status: RedemptionStatus.PENDING_VALIDATION },
+      payloadAfter: { status: redemption.status, bonusGranted: redemption.bonusGranted },
+    });
+
     return redemption;
   }
 
@@ -215,6 +227,17 @@ export class CouponsService {
     redemption.validatedAt = new Date();
     redemption.validatedById = adminId;
 
-    return this.redemptionsRepository.save(redemption);
+    const saved = await this.redemptionsRepository.save(redemption);
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.COUPON_REDEMPTION_REJECT,
+      targetType: 'CouponRedemption',
+      targetId: saved.id,
+      payloadBefore: { status: RedemptionStatus.PENDING_VALIDATION },
+      payloadAfter: { status: saved.status },
+    });
+
+    return saved;
   }
 }

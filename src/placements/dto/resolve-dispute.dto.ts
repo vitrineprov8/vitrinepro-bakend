@@ -1,4 +1,4 @@
-import { IsEnum } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export enum DisputeResolution {
   /** Confirma o placement como se o hunter tivesse aceitado (dados corretos). */
@@ -11,4 +11,10 @@ export enum DisputeResolution {
 export class ResolveDisputeDto {
   @IsEnum(DisputeResolution)
   resolution: DisputeResolution;
+
+  /** Opcional — motivo/nota da decisão, gravado no audit log (B23). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

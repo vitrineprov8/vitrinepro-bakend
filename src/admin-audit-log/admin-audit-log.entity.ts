@@ -1,0 +1,61 @@
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  Index,
+} from 'typeorm';
+
+/**
+ * B23 — audit log genérico de ações administrativas.
+ *
+ * Exigido pelo spec (design-spec/06_ADMIN_E_FLUXOS_TRANSVERSAIS.md §A4/A6:
+ * "motivo logado" em forçar fee/estorno, alterar plano, login-as) e pelo B22
+ * (mudança de split de placement é dinheiro — precisa rastro).
+ *
+ * `targetType`/`targetId` identificam o alvo da ação (ex.: targetType='User',
+ * targetId=<userId da empresa> para uma mudança de split). `payloadBefore`/
+ * `payloadAfter` guardam um snapshot mínimo do que mudou (não a entidade
+ * inteira) — útil pra auditoria sem virar um dump genérico de toda a tabela.
+ */
+export enum AdminAuditAction {
+  PLACEMENT_SPLIT_UPDATE = 'PLACEMENT_SPLIT_UPDATE',
+  PLACEMENT_DISPUTE_RESOLVE = 'PLACEMENT_DISPUTE_RESOLVE',
+  HUNTER_VERIFICATION_APPROVE = 'HUNTER_VERIFICATION_APPROVE',
+  HUNTER_VERIFICATION_REJECT = 'HUNTER_VERIFICATION_REJECT',
+  COUPON_REDEMPTION_VALIDATE = 'COUPON_REDEMPTION_VALIDATE',
+  COUPON_REDEMPTION_REJECT = 'COUPON_REDEMPTION_REJECT',
+}
+
+@Entity('admin_audit_logs')
+export class AdminAuditLog {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index('IDX_admin_audit_logs_adminId')
+  @Column({ type: 'uuid' })
+  adminId: string;
+
+  @Index('IDX_admin_audit_logs_action')
+  @Column({ type: 'varchar', length: 64 })
+  action: AdminAuditAction;
+
+  @Index('IDX_admin_audit_logs_target')
+  @Column({ type: 'varchar', length: 64 })
+  targetType: string;
+
+  @Column({ type: 'varchar', length: 64 })
+  targetId: string;
+
+  @Column({ type: 'text', nullable: true })
+  reason: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  payloadBefore: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  payloadAfter: Record<string, unknown> | null;
+
+  @CreateDateColumn()
+  createdAt: Date;
+}

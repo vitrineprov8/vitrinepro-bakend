@@ -82,8 +82,11 @@ export class HuntersController {
   @Post('admin/hunters/verifications/:userId/approve')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  adminApprove(@Param('userId') userId: string) {
-    return this.huntersService.adminApprove(userId);
+  adminApprove(
+    @Param('userId') userId: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.huntersService.adminApprove(userId, req.user.id);
   }
 
   @Post('admin/hunters/verifications/:userId/reject')
@@ -91,8 +94,9 @@ export class HuntersController {
   @Roles(UserRole.ADMIN)
   adminReject(
     @Param('userId') userId: string,
+    @Request() req: { user: { id: string } },
     @Body() dto: RejectVerificationDto,
   ) {
-    return this.huntersService.adminReject(userId, dto);
+    return this.huntersService.adminReject(userId, req.user.id, dto);
   }
 }

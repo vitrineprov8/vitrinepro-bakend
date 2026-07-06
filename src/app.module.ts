@@ -36,6 +36,7 @@ import { StatsModule } from './stats/stats.module';
 import { MailModule } from './mail/mail.module';
 import { HuntersModule } from './hunters/hunters.module';
 import { PlacementsModule } from './placements/placements.module';
+import { AdminAuditLogModule } from './admin-audit-log/admin-audit-log.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { PlacementsModule } from './placements/placements.module';
     StatsModule,
     HuntersModule,
     PlacementsModule,
+    AdminAuditLogModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],

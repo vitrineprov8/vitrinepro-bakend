@@ -249,3 +249,22 @@ export function placementFeeReleasedTemplate(
     ),
   };
 }
+
+/** B22 — admin ajustou o split de placement negociado desta empresa. */
+export function placementSplitChangedTemplate(
+  companyName: string,
+  newPlatformSharePercent: number,
+  reason: string,
+): MailContent {
+  const newHunterSharePercent = 100 - newPlatformSharePercent;
+  return {
+    subject: 'Atualização no acordo de split de placements — VitrinePro',
+    html: layout(
+      'Split de placement atualizado',
+      `Olá <strong>${companyName}</strong>, o acordo de split de fee de placements da sua conta foi atualizado por nossa equipe.<br><br>
+       Novo split: <strong>${newHunterSharePercent}% hunter / ${newPlatformSharePercent}% plataforma</strong>.<br><br>
+       <strong>Motivo:</strong> ${reason}<br><br>
+       Esta mudança vale apenas para placements criados a partir de agora — os já existentes não são afetados.`,
+    ),
+  };
+}
