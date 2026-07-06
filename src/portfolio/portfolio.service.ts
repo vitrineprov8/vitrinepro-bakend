@@ -95,6 +95,16 @@ export class PortfolioService {
     if (item.status !== PortfolioStatus.PUBLISHED && item.userId !== userId) {
       throw new NotFoundException('Item não disponível.');
     }
+    // F7/gap novo — este endpoint é público (OptionalJwtAuthGuard, sem auth
+    // obrigatória), mas a relation `user` trazia a entidade crua com o hash
+    // de `password` (mesma classe de bug do B19, aqui ainda mais grave por
+    // não exigir autenticação nenhuma). Remove os campos sensíveis antes de
+    // devolver — mantém só o necessário para exibir o autor do item.
+    if (item.user) {
+      const { password, oauthId, avatarKey, bannerKey, passwordResetToken, passwordResetExpiresAt, ...safeUser } =
+        item.user as any;
+      item.user = safeUser;
+    }
     return item;
   }
 

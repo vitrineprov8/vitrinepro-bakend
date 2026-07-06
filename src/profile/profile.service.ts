@@ -35,10 +35,22 @@ export class ProfileService {
     private seoService: SeoService,
   ) {}
 
-  async getMyProfile(userId: string): Promise<User> {
+  /**
+   * B19 — remove campos sensíveis antes de devolver a entidade `User` crua.
+   * `getPublicProfile`/`getPublicCompany` já faziam isso; os endpoints
+   * autenticados (`/me`, `PATCH /profile`, `PATCH /profile/me/personas`,
+   * upload de avatar/banner, active-context) não filtravam nada, vazando o
+   * hash de `password` (e tokens de reset/verificação) para o front.
+   */
+  private sanitize(user: User): Omit<User, 'password' | 'passwordResetToken' | 'passwordResetExpiresAt'> {
+    const { password, passwordResetToken, passwordResetExpiresAt, ...rest } = user as any;
+    return rest;
+  }
+
+  async getMyProfile(userId: string): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return user;
+    return this.sanitize(user);
   }
 
   async getPublicProfile(username: string): Promise<Partial<User>> {
@@ -75,7 +87,7 @@ export class ProfileService {
    * EMPRESA é bloqueada aqui — só é atribuída no registro (`isCompany=true`);
    * contas empresa não acumulam CANDIDATO/HUNTER por esta rota.
    */
-  async activatePersona(userId: string, persona: UserPersona): Promise<User> {
+  async activatePersona(userId: string, persona: UserPersona): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -90,11 +102,12 @@ export class ProfileService {
 
     const current = user.personas ?? [];
     if (current.includes(persona)) {
-      return user;
+      return this.sanitize(user);
     }
 
     user.personas = [...current, persona];
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    return this.sanitize(saved);
   }
 
   /**
@@ -153,7 +166,7 @@ export class ProfileService {
     };
   }
 
-  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -243,10 +256,10 @@ export class ProfileService {
       void this.seoService.notifyIndexNow(`/perfil/${savedUser.username}`);
     }
 
-    return savedUser;
+    return this.sanitize(savedUser);
   }
 
-  async uploadAvatar(userId: string, file: Express.Multer.File): Promise<User> {
+  async uploadAvatar(userId: string, file: Express.Multer.File): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -262,7 +275,8 @@ export class ProfileService {
 
     user.avatarUrl = url;
     user.avatarKey = key;
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    return this.sanitize(saved);
   }
 
   /**
@@ -276,14 +290,15 @@ export class ProfileService {
    * show "Publicando como: Empresa X" in VagaEditor, and the vagas service
    * reads it when creating vagas to derive owner/companyId from the team.
    */
-  async setActiveContext(userId: string, dto: SetActiveContextDto): Promise<User> {
+  async setActiveContext(userId: string, dto: SetActiveContextDto): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     if (dto.teamId === null || dto.teamId === undefined) {
       // Reset to personal context
       user.activeContextTeamId = null;
-      return this.usersRepository.save(user);
+      const saved = await this.usersRepository.save(user);
+      return this.sanitize(saved);
     }
 
     // Validate the user owns or belongs to this team
@@ -316,10 +331,11 @@ export class ProfileService {
     }
 
     user.activeContextTeamId = dto.teamId;
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    return this.sanitize(saved);
   }
 
-  async uploadBanner(userId: string, file: Express.Multer.File): Promise<User> {
+  async uploadBanner(userId: string, file: Express.Multer.File): Promise<Partial<User>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
@@ -335,6 +351,7 @@ export class ProfileService {
 
     user.bannerUrl = url;
     user.bannerKey = key;
-    return this.usersRepository.save(user);
+    const saved = await this.usersRepository.save(user);
+    return this.sanitize(saved);
   }
 }
