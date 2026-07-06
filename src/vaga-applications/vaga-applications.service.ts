@@ -7,10 +7,11 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { VagaApplication } from './vaga-application.entity';
+import { VagaApplication, ApplicationSource } from './vaga-application.entity';
 import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 import { User, UserRole } from '../users/user.entity';
+import { PipelineTemplate } from '../pipeline-templates/pipeline-template.entity';
 import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
@@ -27,6 +28,8 @@ export class VagaApplicationsService {
     private cvRepository: Repository<CV>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(PipelineTemplate)
+    private pipelineTemplatesRepository: Repository<PipelineTemplate>,
   ) {}
 
   async apply(
@@ -150,29 +153,61 @@ export class VagaApplicationsService {
       order: { createdAt: 'DESC' },
     });
 
-    return apps.map((a) => ({
-      id: a.id,
-      pipelineStage: a.pipelineStage,
-      isRejected: a.isRejected,
-      message: a.message,
-      snapshotFullName: a.snapshotFullName,
-      snapshotEmail: a.snapshotEmail,
-      snapshotPhone: a.snapshotPhone,
-      snapshotLocation: a.snapshotLocation,
-      createdAt: a.createdAt,
-      cv: a.cv
-        ? { id: a.cv.id, label: a.cv.label, fileUrl: a.cv.fileUrl }
-        : null,
-      user: a.user
-        ? {
-            id: a.user.id,
-            firstName: a.user.firstName,
-            lastName: a.user.lastName,
-            username: a.user.username,
-            avatarUrl: a.user.avatarUrl,
-          }
-        : null,
-    }));
+    // B4 — RN-NOVA-03: contato de candidatos submetidos por hunter (source=HUNTER)
+    // fica mascarado até a candidatura atingir a etapa configurada pelo dono da
+    // vaga (`User.hunterContactRevealStageOrder`, default 2). Resolvido com no
+    // máximo 2 queries extras (owner + template), nunca por linha.
+    const hasHunterApp = apps.some((a) => a.source === ApplicationSource.HUNTER);
+    let revealThreshold = 2;
+    let stageOrderById = new Map<string, number>();
+    if (hasHunterApp) {
+      const owner = await this.usersRepository.findOne({
+        where: { id: vaga.createdById as string },
+        select: ['id', 'hunterContactRevealStageOrder'],
+      });
+      revealThreshold = owner?.hunterContactRevealStageOrder ?? 2;
+
+      const template = await this.pipelineTemplatesRepository.findOne({
+        where: { ownerId: vaga.createdById as string },
+      });
+      stageOrderById = new Map(
+        (template?.stages ?? []).map((s) => [s.id, s.order]),
+      );
+    }
+
+    return apps.map((a) => {
+      const isHunterSourced = a.source === ApplicationSource.HUNTER;
+      const stageOrder = stageOrderById.get(a.pipelineStage) ?? 0;
+      const contactMasked = isHunterSourced && stageOrder < revealThreshold;
+
+      return {
+        id: a.id,
+        source: a.source,
+        pipelineStage: a.pipelineStage,
+        isRejected: a.isRejected,
+        message: a.message,
+        snapshotFullName: a.snapshotFullName,
+        // RN-NOVA-03: mascara e-mail/telefone de candidatos de hunter até a
+        // etapa de liberação configurada pelo dono da vaga.
+        snapshotEmail: contactMasked ? null : a.snapshotEmail,
+        snapshotPhone: contactMasked ? null : a.snapshotPhone,
+        snapshotLocation: a.snapshotLocation,
+        contactMasked,
+        createdAt: a.createdAt,
+        cv: a.cv
+          ? { id: a.cv.id, label: a.cv.label, fileUrl: a.cv.fileUrl }
+          : null,
+        user: a.user
+          ? {
+              id: a.user.id,
+              firstName: a.user.firstName,
+              lastName: a.user.lastName,
+              username: a.user.username,
+              avatarUrl: a.user.avatarUrl,
+            }
+          : null,
+      };
+    });
   }
 
   /**

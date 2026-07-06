@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -36,12 +37,26 @@ export class RadarQueryDto extends PaginationDto {
   @Min(0)
   salaryMin?: number;
 
+  /** B4 — Marketplace de hunters: só vagas com allowHunters=true (T-H07). */
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  allowHunters?: boolean;
+
+  /** B4 — filtro "fee mínimo (R$)" do marketplace. Compara contra vaga.feeAmount. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  feeMin?: number;
+
   /**
    * Ordering strategy:
    *   recent     — most recently published first (default)
    *   relevance  — title matches ranked above description matches, then by publishedAt
+   *   fee        — B4: maior feeAmount primeiro (nulls por último) — marketplace de hunters
    */
   @IsOptional()
-  @IsEnum(['recent', 'relevance'])
-  order?: 'recent' | 'relevance';
+  @IsEnum(['recent', 'relevance', 'fee'])
+  order?: 'recent' | 'relevance' | 'fee';
 }

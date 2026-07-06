@@ -32,6 +32,7 @@ import { ProcessShareModule } from './process-share/process-share.module';
 import { SeoModule } from './seo/seo.module';
 import { StatsModule } from './stats/stats.module';
 import { MailModule } from './mail/mail.module';
+import { HuntersModule } from './hunters/hunters.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { MailModule } from './mail/mail.module';
     ProcessShareModule,
     SeoModule,
     StatsModule,
+    HuntersModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],

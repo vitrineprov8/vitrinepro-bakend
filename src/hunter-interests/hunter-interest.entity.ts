@@ -47,6 +47,15 @@ export class HunterInterest {
   })
   status: HunterInterestStatus;
 
+  /**
+   * B4 — Timestamp of the hunter's acceptance of the "termos de
+   * intermediação" (fee %, exclusivity window, max candidates) shown in the
+   * "Quero esta vaga" drawer (T-H07). Required (non-null) for every row —
+   * `express()` rejects the request if the terms were not accepted.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  termsAcceptedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

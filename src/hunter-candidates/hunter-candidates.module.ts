@@ -3,12 +3,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { HunterCandidate } from './hunter-candidate.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
 import { Vaga } from '../vagas/vaga.entity';
+import { User } from '../users/user.entity';
 import { HunterCandidatesController } from './hunter-candidates.controller';
 import { HunterCandidatesService } from './hunter-candidates.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([HunterCandidate, VagaApplication, Vaga]),
+    TypeOrmModule.forFeature([HunterCandidate, VagaApplication, Vaga, User]),
   ],
   controllers: [HunterCandidatesController],
   providers: [HunterCandidatesService],

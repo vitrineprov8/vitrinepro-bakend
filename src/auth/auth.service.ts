@@ -12,7 +12,7 @@ import { UsersService } from '../users/users.service';
 import { TagsService } from '../tags/tags.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../users/user.entity';
+import { User, UserPersona } from '../users/user.entity';
 import { MailService } from '../mail/mail.service';
 
 /** B2 — token expira 1h após a solicitação. */
@@ -37,6 +37,8 @@ export class AuthService {
     isCompany?: boolean;
     companyName?: string;
     companyIndustry?: string;
+    /** B1 — persona escolhida em /cadastro (T13). Ignorado quando isCompany=true. */
+    persona?: 'CANDIDATO' | 'HUNTER';
   }) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
@@ -52,6 +54,14 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     const referralCode = await this.generateReferralCode();
 
+    // B1 — persona inicial: empresa sempre EMPRESA; HUNTER acumula CANDIDATO
+    // (o hunter também é um profissional com perfil público); default CANDIDATO.
+    const personas: UserPersona[] = registerDto.isCompany
+      ? [UserPersona.EMPRESA]
+      : registerDto.persona === 'HUNTER'
+        ? [UserPersona.CANDIDATO, UserPersona.HUNTER]
+        : [UserPersona.CANDIDATO];
+
     const user = await this.usersService.create({
       ...registerDto,
       password: hashedPassword,
@@ -60,6 +70,7 @@ export class AuthService {
       isCompany: registerDto.isCompany ?? false,
       companyName: registerDto.isCompany ? (registerDto.companyName ?? null) : null,
       companyIndustry: registerDto.companyIndustry ?? null,
+      personas,
     });
 
     await this.tagsService.createDefaultTagsForUser(user.id);
@@ -74,6 +85,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        personas: user.personas,
       },
     };
   }
@@ -111,6 +123,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        personas: user.personas,
       },
     };
   }

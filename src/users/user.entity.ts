@@ -25,6 +25,35 @@ export enum PlanStatus {
   PENDING = 'PENDING',
 }
 
+/**
+ * B1 — Persona/role de produto. Uma conta não-empresa pode acumular
+ * CANDIDATO e HUNTER (ex.: profissional que também vira recrutador);
+ * contas `isCompany=true` recebem EMPRESA e não ativam as outras por aqui.
+ */
+export enum UserPersona {
+  CANDIDATO = 'CANDIDATO',
+  HUNTER = 'HUNTER',
+  EMPRESA = 'EMPRESA',
+}
+
+/**
+ * B8 — Ciclo de vida da verificação de identidade/perfil do hunter.
+ * NONE: nunca solicitou. PENDING: docs enviados, aguardando análise do admin.
+ * APPROVED: selo "Verificado" ativo. REJECTED: recusado (ver `verificationRejectionReason`).
+ */
+export enum HunterVerificationStatus {
+  NONE = 'NONE',
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
+
+export interface VerificationDocument {
+  url: string;
+  label: string;
+  uploadedAt: string;
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -113,6 +142,14 @@ export class User {
   @Column({ type: 'varchar', length: 16, unique: true, nullable: true })
   referralCode: string | null;
 
+  /**
+   * B1 — personas ativas desta conta (ver `UserPersona`). `simple-array`
+   * grava como texto separado por vírgula. Definida no registro; HUNTER pode
+   * ser ativada depois via `PATCH /profile/me/personas`.
+   */
+  @Column({ type: 'simple-array', nullable: true })
+  personas: UserPersona[] | null;
+
   // ── B2 — reset de senha ────────────────────────────────────────────────────
   /** Token de uso único enviado por e-mail para redefinir a senha. Expira em 1h. */
   @Column({ type: 'varchar', length: 64, nullable: true, select: false })
@@ -146,6 +183,52 @@ export class User {
    */
   @Column({ type: 'uuid', nullable: true })
   activeContextTeamId: string | null;
+
+  /**
+   * B4 — RN-NOVA-03: etapa (order da pipeline_template do próprio usuário) a
+   * partir da qual o contato (e-mail/telefone) de um candidato submetido por
+   * hunter deixa de ser mascarado nas respostas de `GET /vagas/:id/applications`.
+   * Default 2 = 3ª coluna do template padrão ("abordados"), conforme design-spec.
+   * Configurável via `PATCH /profile` (preferências de mascaramento de contato).
+   */
+  @Column({ type: 'int', default: 2 })
+  hunterContactRevealStageOrder: number;
+
+  // ── B5 — Perfil público de hunter ───────────────────────────────────────────
+  /** Chips de especialidade/segmento mostrados no perfil e diretório público. */
+  @Column({ type: 'simple-array', nullable: true })
+  hunterSpecialties: string[] | null;
+
+  /** Anos de experiência como recrutador (opcional, mostrado no perfil T08). */
+  @Column({ type: 'int', nullable: true })
+  hunterYearsExperience: number | null;
+
+  // ── B8 — Verificação de hunter ──────────────────────────────────────────────
+  /**
+   * Gate do marketplace: só APPROVED pode expressar interesse/submeter candidatos.
+   * `varchar` (não `enum` nativo do Postgres) — mesmo padrão de `ConsentStatus`/
+   * `ApplicationSource` no resto do código, mantém a migração simples (sem tipo
+   * de enum do banco a gerenciar).
+   */
+  @Column({ type: 'varchar', length: 16, default: HunterVerificationStatus.NONE })
+  verificationStatus: HunterVerificationStatus;
+
+  /** Documentos enviados para análise (RG, comprovante, etc.) — array de {url,label,uploadedAt}. */
+  @Column({ type: 'jsonb', nullable: true })
+  verificationDocs: VerificationDocument[] | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  verificationLinkedinUrl: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  verificationRequestedAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  verificationDecidedAt: Date | null;
+
+  /** Motivo da recusa, mostrado ao hunter para ele poder corrigir e reenviar. */
+  @Column({ type: 'text', nullable: true })
+  verificationRejectionReason: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

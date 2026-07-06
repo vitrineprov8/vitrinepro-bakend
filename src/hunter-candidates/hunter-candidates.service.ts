@@ -14,6 +14,7 @@ import {
   ApplicationSource,
 } from '../vaga-applications/vaga-application.entity';
 import { Vaga, VagaStatus } from '../vagas/vaga.entity';
+import { User, HunterVerificationStatus } from '../users/user.entity';
 import { CreateHunterCandidateDto } from './dto/create-hunter-candidate.dto';
 import { UpdateHunterCandidateDto } from './dto/update-hunter-candidate.dto';
 import { SubmitCandidateDto } from './dto/submit-candidate.dto';
@@ -25,16 +26,17 @@ import { MailService } from '../mail/mail.service';
  * Business rules (see PLANO_DESENVOLVIMENTO.md §BACKEND / RN-NOVA):
  *  - RN-NOVA-01: a hunter may submit at most MAX_SUBMISSIONS candidates per vaga.
  *  - RN-NOVA-02: the same candidate cannot be re-submitted to the same vaga
- *    within DUPLICATE_LOCK_DAYS days.
+ *    within vaga.exclusivityDays days (B4 — configurável por vaga; era uma
+ *    constante fixa de 90 dias antes do B4, mantida como fallback).
  *  - Submission requires the candidate's LGPD consent (consentStatus GRANTED)
  *    and vaga.allowHunters === true.
  */
 @Injectable()
 export class HunterCandidatesService {
-  /** RN-NOVA-01 — máximo de submissões por hunter por vaga (proxy de B4). */
+  /** RN-NOVA-01 — máximo de submissões por hunter por vaga. */
   private readonly MAX_SUBMISSIONS_PER_VAGA = 5;
-  /** RN-NOVA-02 — janela de trava de duplicidade (dias). */
-  private readonly DUPLICATE_LOCK_DAYS = 90;
+  /** RN-NOVA-02 — fallback quando vaga.exclusivityDays não estiver definido. */
+  private readonly DEFAULT_DUPLICATE_LOCK_DAYS = 90;
 
   constructor(
     @InjectRepository(HunterCandidate)
@@ -43,6 +45,8 @@ export class HunterCandidatesService {
     private readonly applicationsRepo: Repository<VagaApplication>,
     @InjectRepository(Vaga)
     private readonly vagasRepo: Repository<Vaga>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>,
     private readonly mail: MailService,
   ) {}
 
@@ -206,6 +210,18 @@ export class HunterCandidatesService {
   ): Promise<VagaApplication> {
     const candidate = await this.getOwned(dto.hunterCandidateId, hunterId);
 
+    // B8 — gate do marketplace: hunter precisa estar com perfil verificado.
+    const hunter = await this.usersRepo.findOne({
+      where: { id: hunterId },
+      select: ['id', 'verificationStatus'],
+    });
+    if (hunter?.verificationStatus !== HunterVerificationStatus.APPROVED) {
+      throw new ForbiddenException({
+        code: 'HUNTER_NOT_VERIFIED',
+        message: 'Verifique seu perfil para trabalhar vagas com fee.',
+      });
+    }
+
     const vaga = await this.vagasRepo.findOne({ where: { id: vagaId } });
     if (!vaga) throw new NotFoundException('Vaga não encontrada.');
     if (vaga.status !== VagaStatus.PUBLISHED) {
@@ -237,9 +253,11 @@ export class HunterCandidatesService {
       );
     }
 
-    // RN-NOVA-02 — trava de duplicidade (mesmo candidato/e-mail nesta vaga em 90d)
+    // RN-NOVA-02 — trava de duplicidade (mesmo candidato/e-mail nesta vaga),
+    // janela configurável por vaga (B4 — vaga.exclusivityDays), com fallback.
+    const lockDays = vaga.exclusivityDays ?? this.DEFAULT_DUPLICATE_LOCK_DAYS;
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - this.DUPLICATE_LOCK_DAYS);
+    cutoff.setDate(cutoff.getDate() - lockDays);
     const recentDup = await this.applicationsRepo
       .createQueryBuilder('a')
       .where('a.vagaId = :vagaId', { vagaId })
@@ -251,7 +269,7 @@ export class HunterCandidatesService {
       .getOne();
     if (recentDup) {
       throw new ConflictException(
-        `Este candidato já foi submetido a esta vaga nos últimos ${this.DUPLICATE_LOCK_DAYS} dias.`,
+        `Este candidato já foi submetido a esta vaga nos últimos ${lockDays} dias.`,
       );
     }
 

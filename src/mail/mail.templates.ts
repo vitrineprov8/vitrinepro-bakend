@@ -102,3 +102,37 @@ export function teamInviteTemplate(
     ),
   };
 }
+
+/** B8 — verificação de hunter aprovada: libera o selo "Verificado" e o marketplace. */
+export function verificationApprovedTemplate(
+  firstName: string,
+  marketplaceUrl: string,
+): MailContent {
+  return {
+    subject: 'Seu perfil foi verificado — VitrinePro',
+    html: layout(
+      'Perfil verificado! ✅',
+      `Olá <strong>${firstName}</strong>, boas notícias: analisamos seus documentos e seu perfil de hunter foi <strong>verificado</strong>.<br><br>
+       Agora você já pode trabalhar vagas com fee no marketplace, com o selo "Verificado" visível no seu perfil público.`,
+      { label: 'Ir para o marketplace', url: marketplaceUrl },
+    ),
+  };
+}
+
+/** B8 — verificação de hunter recusada, com motivo para o hunter corrigir e reenviar. */
+export function verificationRejectedTemplate(
+  firstName: string,
+  reason: string,
+  profileUrl: string,
+): MailContent {
+  return {
+    subject: 'Sua verificação de hunter precisa de ajustes — VitrinePro',
+    html: layout(
+      'Verificação não aprovada',
+      `Olá <strong>${firstName}</strong>, analisamos seus documentos, mas ainda não foi possível aprovar sua verificação.<br><br>
+       <strong>Motivo:</strong> ${reason}<br><br>
+       Você pode corrigir as informações e enviar novamente a qualquer momento.`,
+      { label: 'Revisar meu perfil', url: profileUrl },
+    ),
+  };
+}

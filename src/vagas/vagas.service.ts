@@ -116,6 +116,8 @@ export class VagasService {
       type,
       workMode,
       salaryMin,
+      allowHunters,
+      feeMin,
       order = 'recent',
     } = dto;
 
@@ -141,6 +143,11 @@ export class VagasService {
     if (salaryMin !== undefined) {
       qb.andWhere('vaga.salaryMin >= :salaryMin', { salaryMin });
     }
+    // B4 — Marketplace de hunters (T-H07): filtra só vagas abertas a hunters,
+    // opcionalmente por fee mínimo (compara contra o valor fixo feeAmount;
+    // vagas com fee só em % não entram no filtro de R$ mínimo).
+    if (allowHunters) qb.andWhere('vaga.allowHunters = true');
+    if (feeMin !== undefined) qb.andWhere('vaga.feeAmount >= :feeMin', { feeMin });
 
     if (order === 'relevance' && q) {
       // Title matches rank higher than description-only matches
@@ -150,6 +157,12 @@ export class VagasService {
       )
         .setParameter('qExact', `%${q.toLowerCase()}%`)
         .addOrderBy('vaga.publishedAt', 'DESC');
+    } else if (order === 'fee') {
+      // Maior fee primeiro; NULLS LAST para não empurrar vagas sem fee fixo pro topo.
+      qb.orderBy('vaga.feeAmount', 'DESC', 'NULLS LAST').addOrderBy(
+        'vaga.publishedAt',
+        'DESC',
+      );
     } else {
       qb.orderBy('vaga.publishedAt', 'DESC');
     }
@@ -262,6 +275,9 @@ export class VagasService {
         'salaryMin',
         'salaryMax',
         'publishedAt',
+        'allowHunters',
+        'feePercent',
+        'feeAmount',
       ],
     });
   }
@@ -357,6 +373,10 @@ export class VagasService {
       segment: dto.segment ?? null,
       allowHunters: dto.allowHunters ?? false,
       hunterContactPhone: dto.hunterContactPhone ?? null,
+      feePercent: dto.feePercent ?? null,
+      feeAmount: dto.feeAmount ?? null,
+      maxHunters: dto.maxHunters ?? 5,
+      exclusivityDays: dto.exclusivityDays ?? 90,
     });
 
     return this.vagasRepository.save(vaga);
@@ -437,6 +457,10 @@ export class VagasService {
       segment: dto.segment !== undefined ? (dto.segment as VagaSegment | undefined) ?? null : vaga.segment,
       allowHunters: dto.allowHunters !== undefined ? dto.allowHunters : vaga.allowHunters,
       hunterContactPhone: dto.hunterContactPhone !== undefined ? dto.hunterContactPhone ?? null : vaga.hunterContactPhone,
+      feePercent: dto.feePercent !== undefined ? dto.feePercent ?? null : vaga.feePercent,
+      feeAmount: dto.feeAmount !== undefined ? dto.feeAmount ?? null : vaga.feeAmount,
+      maxHunters: dto.maxHunters !== undefined ? dto.maxHunters : vaga.maxHunters,
+      exclusivityDays: dto.exclusivityDays !== undefined ? dto.exclusivityDays : vaga.exclusivityDays,
     });
 
     return this.vagasRepository.save(vaga);
@@ -533,6 +557,15 @@ export class VagasService {
 
       if (vaga.status === VagaStatus.PUBLISHED) {
         throw new ConflictException('Vaga já está publicada.');
+      }
+
+      // B4 — fee obrigatório se a vaga aceita hunters (design-spec 03: "fee
+      // obrigatório se hunters on"). Validado aqui (e não em create/update)
+      // para permitir salvar rascunhos incompletos livremente.
+      if (vaga.allowHunters && vaga.feePercent == null && vaga.feeAmount == null) {
+        throw new BadRequestException(
+          'Defina o fee (percentual ou valor fixo) antes de publicar uma vaga aberta a hunters.',
+        );
       }
 
       // Admins bypass the plan limit

@@ -4,6 +4,8 @@ import {
   welcomeTemplate,
   passwordResetTemplate,
   teamInviteTemplate,
+  verificationApprovedTemplate,
+  verificationRejectedTemplate,
   type MailContent,
 } from './mail.templates';
 
@@ -130,6 +132,25 @@ export class MailService {
     return this.sendTemplate(
       to,
       teamInviteTemplate(teamName, inviterName, role, link),
+    );
+  }
+
+  /** B8 — verificação de hunter aprovada. */
+  sendVerificationApproved(to: string, firstName: string): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/hunter/marketplace`;
+    return this.sendTemplate(to, verificationApprovedTemplate(firstName, link));
+  }
+
+  /** B8 — verificação de hunter recusada, com motivo. */
+  sendVerificationRejected(
+    to: string,
+    firstName: string,
+    reason: string,
+  ): Promise<SendMailResult> {
+    const link = `${this.frontendUrl}/app/hunter/perfil`;
+    return this.sendTemplate(
+      to,
+      verificationRejectedTemplate(firstName, reason, link),
     );
   }
 }

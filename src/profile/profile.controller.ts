@@ -17,6 +17,7 @@ import { ProfileService } from './profile.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetActiveContextDto } from './dto/set-active-context.dto';
 import { PublicListQueryDto } from './dto/public-list-query.dto';
+import { ActivatePersonaDto } from './dto/activate-persona.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('profile')
@@ -61,6 +62,17 @@ export class ProfileController {
     @Body() dto: SetActiveContextDto,
   ) {
     return this.profileService.setActiveContext(req.user.id, dto);
+  }
+
+  /**
+   * B1 — Ativa uma persona adicional (CANDIDATO/HUNTER) na conta autenticada.
+   * Idempotente: já ativa não dá erro. EMPRESA não pode ser ativada aqui
+   * (definida só no registro via isCompany).
+   */
+  @Patch('me/personas')
+  @UseGuards(JwtAuthGuard)
+  activatePersona(@Request() req, @Body() dto: ActivatePersonaDto) {
+    return this.profileService.activatePersona(req.user.id, dto.persona);
   }
 
   /**

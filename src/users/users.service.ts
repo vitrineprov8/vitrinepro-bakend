@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from './user.entity';
+import { User, UserPersona } from './user.entity';
 
 @Injectable()
 export class UsersService {
@@ -40,6 +40,7 @@ export class UsersService {
     isCompany?: boolean;
     companyName?: string | null;
     companyIndustry?: string | null;
+    personas?: UserPersona[];
   }): Promise<User> {
     const username = await this.generateUniqueUsername(
       userData.firstName,

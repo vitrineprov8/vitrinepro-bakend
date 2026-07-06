@@ -21,6 +21,7 @@ export class AuthController {
       isCompany?: boolean;
       companyName?: string;
       companyIndustry?: string;
+      persona?: 'CANDIDATO' | 'HUNTER';
     },
   ) {
     return this.authService.register(registerDto);

@@ -112,6 +112,40 @@ export class Vaga {
   @Column({ type: 'varchar', length: 50, nullable: true })
   hunterContactPhone: string | null;
 
+  // ── B4 — Marketplace/fee ───────────────────────────────────────────────────
+  /**
+   * Fee percentage paid to the hunter on hire, as a % of the hired salary
+   * (e.g. 50.00 = 50%). Nullable — the recruiter may set this and/or
+   * `feeAmount`. At least one of the two is required when `allowHunters=true`
+   * (enforced in VagasService, not at the DB level).
+   */
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  feePercent: number | null;
+
+  /**
+   * Fixed fee amount in R$, used when the recruiter prefers a flat value
+   * instead of (or in addition to) a percentage — useful for vagas without a
+   * declared salary range (freelance/PJ).
+   */
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  feeAmount: number | null;
+
+  /**
+   * Max number of hunters that may have an ACCEPTED HunterInterest on this
+   * vaga simultaneously (design-spec: barra "hunters: 3/5"). Enforced in
+   * HunterInterestsService.updateStatus when accepting a new hunter.
+   */
+  @Column({ type: 'int', default: 5 })
+  maxHunters: number;
+
+  /**
+   * Exclusivity window, in days, that locks a hunter-submitted candidate
+   * against resubmission to this same vaga (RN-NOVA-02). Replaces the
+   * previously hardcoded 90-day constant in HunterCandidatesService.
+   */
+  @Column({ type: 'int', default: 90 })
+  exclusivityDays: number;
+
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })
   createdBy: User | null;

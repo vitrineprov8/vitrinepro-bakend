@@ -92,4 +92,33 @@ export class CreateVagaDto {
   @IsString()
   @MaxLength(50)
   hunterContactPhone?: string;
+
+  // ── B4 — Marketplace/fee ───────────────────────────────────────────────────
+  /** Fee % on the hired salary (e.g. 50 = 50%). At least one of feePercent/feeAmount required if allowHunters=true. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  feePercent?: number;
+
+  /** Fixed fee value in R$ — alternative/complement to feePercent. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  feeAmount?: number;
+
+  /** Max simultaneous ACCEPTED hunters on this vaga. Default 5. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 0 })
+  @Min(1)
+  maxHunters?: number;
+
+  /** Exclusivity window (days) locking a candidate against resubmission (RN-NOVA-02). Default 90. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 0 })
+  @Min(1)
+  exclusivityDays?: number;
 }

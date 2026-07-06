@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../users/user.entity';
+import { User, UserPersona } from '../users/user.entity';
 import { Team } from '../teams/team.entity';
 import { TeamMember, TeamMemberStatus } from '../teams/team-member.entity';
 import { PortfolioItem, PortfolioStatus } from '../portfolio/portfolio.entity';
@@ -66,6 +66,35 @@ export class ProfileService {
     }
     const { password, oauthId, avatarKey, bannerKey, ...publicFields } = user as any;
     return publicFields;
+  }
+
+  /**
+   * B1 — Ativa uma persona adicional (CANDIDATO/HUNTER) na conta.
+   *
+   * Idempotente: se já ativa, apenas retorna o usuário sem alterar nada.
+   * EMPRESA é bloqueada aqui — só é atribuída no registro (`isCompany=true`);
+   * contas empresa não acumulam CANDIDATO/HUNTER por esta rota.
+   */
+  async activatePersona(userId: string, persona: UserPersona): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    if (persona === UserPersona.EMPRESA) {
+      throw new ForbiddenException(
+        'A persona EMPRESA não pode ser ativada por aqui — crie uma conta empresa.',
+      );
+    }
+    if (user.isCompany) {
+      throw new ForbiddenException('Contas empresa não podem ativar outras personas.');
+    }
+
+    const current = user.personas ?? [];
+    if (current.includes(persona)) {
+      return user;
+    }
+
+    user.personas = [...current, persona];
+    return this.usersRepository.save(user);
   }
 
   /**

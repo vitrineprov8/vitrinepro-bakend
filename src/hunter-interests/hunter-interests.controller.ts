@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { User } from '../users/user.entity';
 import { HunterInterestsService } from './hunter-interests.service';
 import { UpdateHunterInterestDto } from './dto/update-hunter-interest.dto';
+import { ExpressInterestDto } from './dto/express-interest.dto';
 
 @Controller()
 export class HunterInterestsController {
@@ -28,6 +29,7 @@ export class HunterInterestsController {
    *  - Vaga must be PUBLISHED and allowHunters = true.
    *  - User cannot be the vaga creator.
    *  - 409 if already registered.
+   *  - B4: body must include `termsAccepted: true` (drawer "Quero esta vaga").
    */
   @Post('vagas/:id/hunter-interest')
   @UseGuards(JwtAuthGuard)
@@ -35,8 +37,9 @@ export class HunterInterestsController {
   express(
     @Param('id') vagaId: string,
     @Request() req: { user: User },
+    @Body() dto: ExpressInterestDto,
   ) {
-    return this.hunterInterestsService.express(vagaId, req.user);
+    return this.hunterInterestsService.express(vagaId, req.user, dto);
   }
 
   /**
