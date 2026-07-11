@@ -21,6 +21,8 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
 import { UpdateStageNotesDto } from './dto/update-stage-notes.dto';
 import { ListOwnerApplicationsDto } from './dto/list-owner-applications.dto';
+import { ListTeamApplicationsDto } from './dto/list-team-applications.dto';
+import { User } from '../users/user.entity';
 
 @Controller()
 export class VagaApplicationsController {
@@ -128,6 +130,20 @@ export class VagaApplicationsController {
     ];
 
     return '﻿' + lines.join('\n');
+  }
+
+  /**
+   * GET /applications/me-as-team
+   * T-T04 — Consultoria: Pipeline Geral agregado de todas as vagas do time
+   * (kanban cross-vaga). 403 se o usuário não estiver em contexto de time.
+   */
+  @Get('applications/me-as-team')
+  @UseGuards(JwtAuthGuard)
+  listByTeam(
+    @Request() req: { user: User },
+    @Query() dto: ListTeamApplicationsDto,
+  ) {
+    return this.applicationsService.listByTeam(req.user, dto);
   }
 
   /**

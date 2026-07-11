@@ -482,6 +482,91 @@ export class PlacementsService {
       .getMany();
   }
 
+  /**
+   * T-T07 — Consultoria: Faturamento & Ganhos (tabela de placements do time,
+   * com colunas extras Cliente e Hunter/Membro responsável).
+   *
+   * Escopo: mesma regra de `VagasService.listMine`/`listByTeam` de applications
+   * (company do quotaOwner OU createdById de qualquer membro ATIVO do time).
+   *
+   * Nota (dívida conhecida, ver CLAUDE.md): contratações diretas feitas pelo
+   * próprio time (sem hunter externo) NÃO têm feeAmount calculado hoje — o
+   * cálculo de fee só roda em `markHired()` quando `isHunterSourced`. Este
+   * endpoint retorna TODOS os placements do escopo do time mesmo assim
+   * (feeAmount null nesses casos) para não esconder o placement da tabela;
+   * os KPIs de `GET /stats/consultoria/ganhos` cobrem só a parte com fee
+   * calculado (mesma limitação, pré-existente do B12).
+   */
+  async listForTeam(actor: User): Promise<unknown[]> {
+    const ctx = await this.teamContextHelper.getTeamContext(actor);
+    if (!ctx.team) {
+      throw new ForbiddenException(
+        'Disponível apenas para workspaces de consultoria (time).',
+      );
+    }
+
+    const teamUserIds = await this.teamContextHelper.getTeamUserIds(ctx.quotaOwner.id);
+
+    const vagaQb = this.vagasRepository
+      .createQueryBuilder('vaga')
+      .leftJoin('vaga.company', 'company')
+      .select(['vaga.id'])
+      .where(
+        '(company.ownerId = :ownerId OR vaga.createdById IN (:...teamUserIds))',
+        { ownerId: ctx.quotaOwner.id, teamUserIds },
+      );
+    const vagaRows = await vagaQb.getMany();
+    const vagaIds = vagaRows.map((v) => v.id);
+    if (vagaIds.length === 0) return [];
+
+    const placements = await this.placementsRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.vaga', 'vaga')
+      .leftJoin('vaga.company', 'company')
+      .leftJoin('p.hunter', 'hunter')
+      .leftJoin('p.markedBy', 'markedBy')
+      .addSelect(['company.id', 'company.name', 'company.logoUrl'])
+      .addSelect(['hunter.id', 'hunter.firstName', 'hunter.lastName', 'hunter.avatarUrl'])
+      .addSelect(['markedBy.id', 'markedBy.firstName', 'markedBy.lastName', 'markedBy.avatarUrl'])
+      .where('p.vagaId IN (:...vagaIds)', { vagaIds })
+      .orderBy('p.createdAt', 'DESC')
+      .getMany();
+
+    return placements.map((p) => ({
+      id: p.id,
+      vagaId: p.vagaId,
+      vagaTitle: p.vaga?.title ?? null,
+      company: p.vaga?.company
+        ? { id: p.vaga.company.id, name: p.vaga.company.name, logoUrl: p.vaga.company.logoUrl }
+        : null,
+      // "Hunter/Membro responsável": hunter externo se veio de indicação, senão
+      // quem marcou a contratação (membro do time que geriu o processo direto).
+      responsavel: p.hunter
+        ? {
+            id: p.hunter.id,
+            firstName: p.hunter.firstName,
+            lastName: p.hunter.lastName,
+            avatarUrl: p.hunter.avatarUrl,
+            isExternalHunter: true,
+          }
+        : p.markedBy
+          ? {
+              id: p.markedBy.id,
+              firstName: p.markedBy.firstName,
+              lastName: p.markedBy.lastName,
+              avatarUrl: p.markedBy.avatarUrl,
+              isExternalHunter: false,
+            }
+          : null,
+      finalSalary: p.finalSalary,
+      feeAmount: p.feeAmount,
+      status: p.status,
+      confirmedAt: p.confirmedAt,
+      feeReleasedAt: p.feeReleasedAt,
+      createdAt: p.createdAt,
+    }));
+  }
+
   private async loadWithVaga(placementId: string): Promise<Placement> {
     const placement = await this.placementsRepository.findOne({
       where: { id: placementId },

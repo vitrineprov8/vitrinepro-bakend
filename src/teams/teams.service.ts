@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import { Team } from './team.entity';
 import { TeamMember, TeamMemberStatus, TeamRole } from './team-member.entity';
 import { User, PlanTier } from '../users/user.entity';
+import { Vaga } from '../vagas/vaga.entity';
 import { PLAN_SEAT_LIMITS } from '../plans/plan-limits';
 import { TeamContextHelper } from './team-context.helper';
 import { MailService } from '../mail/mail.service';
@@ -25,6 +26,8 @@ export class TeamsService {
     private teamsRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMembersRepository: Repository<TeamMember>,
+    @InjectRepository(Vaga)
+    private vagasRepository: Repository<Vaga>,
     private teamContextHelper: TeamContextHelper,
     private mailService: MailService,
     private notificationsService: NotificationsService,
@@ -374,6 +377,28 @@ export class TeamsService {
       );
     }
 
+    // T-T06 — "as vagas de {nome} continuam no time; processos dele serão
+    // reatribuídos a você" (cópia do design-spec, modal de remoção). As vagas
+    // em si NUNCA são deletadas/desvinculadas do time (createdById/companyId
+    // não mudam) — só o campo assignedToId (responsável) é transferido para
+    // quem executou a remoção, preservando o processo em andamento.
+    if (target.userId) {
+      // Escopo: só vagas DESTE time (o mesmo membro pode pertencer a mais de
+      // um time) — usa a mesma regra de "vaga do time" do resto do backend
+      // (company do owner deste time OU createdById de um membro deste time).
+      const teamUserIds = await this.teamContextHelper.getTeamUserIds(team.ownerId);
+      await this.vagasRepository
+        .createQueryBuilder()
+        .update(Vaga)
+        .set({ assignedToId: actor.id })
+        .where('assignedToId = :removedUserId', { removedUserId: target.userId })
+        .andWhere(
+          '("companyId" IN (SELECT id FROM companies WHERE "ownerId" = :teamOwnerId) OR "createdById" IN (:...teamUserIds))',
+          { teamOwnerId: team.ownerId, teamUserIds },
+        )
+        .execute();
+    }
+
     await this.teamMembersRepository.remove(target);
   }
 
@@ -449,6 +474,30 @@ export class TeamsService {
       throw new ForbiddenException('Convite já foi processado.');
     }
     await this.teamMembersRepository.remove(member);
+  }
+
+  /**
+   * T-T01/T-T08 — Updates the consultoria's public profile (name, logo, CNPJ, bio).
+   * Only the OWNER may edit these fields.
+   */
+  async updateProfile(
+    actor: User,
+    dto: { name?: string; logoUrl?: string; cnpj?: string; bio?: string },
+  ): Promise<Team> {
+    const team = await this.getOrCreateForUser(actor);
+
+    if (team.ownerId !== actor.id) {
+      throw new ForbiddenException(
+        'Apenas o proprietário pode editar o perfil da consultoria.',
+      );
+    }
+
+    if (dto.name !== undefined) team.name = dto.name;
+    if (dto.logoUrl !== undefined) team.logoUrl = dto.logoUrl || null;
+    if (dto.cnpj !== undefined) team.cnpj = dto.cnpj || null;
+    if (dto.bio !== undefined) team.bio = dto.bio || null;
+
+    return this.teamsRepository.save(team);
   }
 
   /**

@@ -26,4 +26,10 @@ export class CreateCompanyDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  @MaxLength(500)
+  website?: string;
 }

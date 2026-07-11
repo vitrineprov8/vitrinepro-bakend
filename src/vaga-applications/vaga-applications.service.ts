@@ -18,6 +18,7 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
 import { UpdateStageNotesDto } from './dto/update-stage-notes.dto';
 import { ListOwnerApplicationsDto } from './dto/list-owner-applications.dto';
+import { ListTeamApplicationsDto } from './dto/list-team-applications.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { paginate } from '../common/paginate.helper';
@@ -355,6 +356,177 @@ export class VagaApplicationsService {
     return apps.map((a) =>
       this.serializeOwnerApplication(a, stageOrderById, revealThreshold),
     );
+  }
+
+  /**
+   * T-T04 — Consultoria: Pipeline Geral agregado (kanban de TODAS as vagas
+   * ativas do time, com pill da vaga em cada card). Escopo: mesma regra de
+   * `VagasService.listMine` (company do quotaOwner OU createdById de
+   * qualquer membro ATIVO do time) — mantida em sincronia manualmente já
+   * que os dois módulos não compartilham uma única fonte de verdade de
+   * "vagas do time" (dívida técnica aceitável para o v1, ver CLAUDE.md).
+   *
+   * Máx. 50 candidaturas por etapa (RN de performance do design-spec) —
+   * `stageCounts` informa o total real de cada etapa para o front decidir
+   * se mostra "carregar mais" (não implementado no v1: lista já vem capada).
+   */
+  async listByTeam(
+    actor: User,
+    dto: ListTeamApplicationsDto,
+  ): Promise<{ items: unknown[]; stageCounts: Record<string, number> }> {
+    const ctx = await this.teamContextHelper.getTeamContext(actor);
+    if (!ctx.team) {
+      throw new ForbiddenException(
+        'Disponível apenas para workspaces de consultoria (time).',
+      );
+    }
+
+    const teamUserIds = await this.teamContextHelper.getTeamUserIds(
+      ctx.quotaOwner.id,
+    );
+
+    const vagaQb = this.vagasRepository
+      .createQueryBuilder('vaga')
+      .leftJoin('vaga.company', 'company')
+      .select(['vaga.id', 'vaga.createdById'])
+      .where(
+        '(company.ownerId = :ownerId OR vaga.createdById IN (:...teamUserIds))',
+        { ownerId: ctx.quotaOwner.id, teamUserIds },
+      );
+    if (dto.companyId) {
+      vagaQb.andWhere('vaga.companyId = :companyId', { companyId: dto.companyId });
+    }
+    if (dto.assignedToId) {
+      vagaQb.andWhere('vaga.assignedToId = :assignedToId', {
+        assignedToId: dto.assignedToId,
+      });
+    }
+    if (dto.vagaId) {
+      vagaQb.andWhere('vaga.id = :vagaId', { vagaId: dto.vagaId });
+    }
+    const vagaRows = await vagaQb.getMany();
+    const vagaIds = vagaRows.map((v) => v.id);
+
+    if (vagaIds.length === 0) {
+      return { items: [], stageCounts: {} };
+    }
+
+    // Resolve per-creator hunter-contact-reveal threshold + pipeline stage
+    // order — a team can have vagas authored by different members, each
+    // with their own template/threshold (mesma ressalva do T-T08).
+    const creatorIds = [
+      ...new Set(
+        vagaRows
+          .map((v) => v.createdById)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const owners = await this.usersRepository.find({
+      where: creatorIds.map((id) => ({ id })),
+      select: ['id', 'hunterContactRevealStageOrder'],
+    });
+    const revealByCreator = new Map(
+      owners.map((o) => [o.id, o.hunterContactRevealStageOrder ?? 2]),
+    );
+    const templates = await this.pipelineTemplatesRepository.find({
+      where: creatorIds.map((id) => ({ ownerId: id })),
+    });
+    const stageOrderByCreator = new Map(
+      templates.map((t) => [
+        t.ownerId,
+        new Map((t.stages ?? []).map((s) => [s.id, s.order])),
+      ]),
+    );
+
+    const qb = this.applicationsRepository
+      .createQueryBuilder('app')
+      .leftJoinAndSelect('app.vaga', 'vaga')
+      .leftJoin('vaga.company', 'company')
+      .leftJoin('vaga.assignedTo', 'assignedTo')
+      .addSelect(['company.id', 'company.name', 'company.logoUrl'])
+      .addSelect([
+        'assignedTo.id',
+        'assignedTo.firstName',
+        'assignedTo.lastName',
+        'assignedTo.username',
+        'assignedTo.avatarUrl',
+      ])
+      .where('app.vagaId IN (:...vagaIds)', { vagaIds })
+      .andWhere('app.isRejected = false')
+      .orderBy('app.pipelineStage', 'ASC')
+      .addOrderBy('app.createdAt', 'DESC');
+
+    if (dto.source) qb.andWhere('app.source = :source', { source: dto.source });
+    if (dto.pipelineStage) {
+      qb.andWhere('app.pipelineStage = :pipelineStage', {
+        pipelineStage: dto.pipelineStage,
+      });
+    }
+    if (dto.q) {
+      qb.andWhere('LOWER(app.snapshotFullName) LIKE :q', {
+        q: `%${dto.q.toLowerCase()}%`,
+      });
+    }
+
+    const apps = await qb.getMany();
+
+    const byStage = new Map<string, VagaApplication[]>();
+    for (const a of apps) {
+      const list = byStage.get(a.pipelineStage) ?? [];
+      list.push(a);
+      byStage.set(a.pipelineStage, list);
+    }
+
+    const stageCounts: Record<string, number> = {};
+    const items: unknown[] = [];
+    const MAX_PER_STAGE = 50;
+    for (const [stage, list] of byStage) {
+      stageCounts[stage] = list.length;
+      for (const a of list.slice(0, MAX_PER_STAGE)) {
+        const creatorId = a.vaga?.createdById ?? null;
+        const revealThreshold = creatorId ? revealByCreator.get(creatorId) ?? 2 : 2;
+        const stageOrderMap = creatorId
+          ? stageOrderByCreator.get(creatorId) ?? new Map<string, number>()
+          : new Map<string, number>();
+        const isHunterSourced = a.source === ApplicationSource.HUNTER;
+        const stageOrder = stageOrderMap.get(a.pipelineStage) ?? 0;
+        const contactMasked = isHunterSourced && stageOrder < revealThreshold;
+
+        items.push({
+          id: a.id,
+          vagaId: a.vagaId,
+          vagaTitle: a.vaga?.title ?? null,
+          vagaSlug: a.vaga?.slug ?? null,
+          company: a.vaga?.company
+            ? {
+                id: a.vaga.company.id,
+                name: a.vaga.company.name,
+                logoUrl: a.vaga.company.logoUrl,
+              }
+            : null,
+          assignedTo: a.vaga?.assignedTo
+            ? {
+                id: a.vaga.assignedTo.id,
+                firstName: a.vaga.assignedTo.firstName,
+                lastName: a.vaga.assignedTo.lastName,
+                username: a.vaga.assignedTo.username,
+                avatarUrl: a.vaga.assignedTo.avatarUrl,
+              }
+            : null,
+          source: a.source,
+          pipelineStage: a.pipelineStage,
+          snapshotFullName: a.snapshotFullName,
+          snapshotEmail: contactMasked ? null : a.snapshotEmail,
+          snapshotPhone: contactMasked ? null : a.snapshotPhone,
+          snapshotLocation: a.snapshotLocation,
+          contactMasked,
+          generalScore: a.generalScore,
+          createdAt: a.createdAt,
+        });
+      }
+    }
+
+    return { items, stageCounts };
   }
 
   private serializeOwnerApplication(

@@ -29,6 +29,10 @@ export class Company {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
+  /** T-T05 — site do cliente, exibido no modal "Novo cliente" / página do cliente. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  website: string | null;
+
   /**
    * The recruiter who owns/manages this client company.
    * Cascades on user deletion so no orphan rows remain.

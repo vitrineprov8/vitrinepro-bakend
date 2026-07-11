@@ -13,7 +13,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { PlacementsService } from './placements.service';
 import { MarkHiredDto } from './dto/mark-hired.dto';
 import { ContestPlacementDto } from './dto/contest-placement.dto';
@@ -86,6 +86,16 @@ export class PlacementsController {
   @Get('me/placements/company')
   listMineAsCompany(@Request() req: { user: { id: string } }) {
     return this.placementsService.listForCompany(req.user.id);
+  }
+
+  /**
+   * GET /placements/me-as-team
+   * T-T07 — Consultoria: Faturamento & Ganhos (tabela de placements do time,
+   * com Cliente + Hunter/Membro responsável). 403 se não estiver em time.
+   */
+  @Get('placements/me-as-team')
+  listMineAsTeam(@Request() req: { user: User }) {
+    return this.placementsService.listForTeam(req.user);
   }
 
   @Post('placements/:id/qa-force-sweep')

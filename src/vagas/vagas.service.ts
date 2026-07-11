@@ -241,13 +241,32 @@ export class VagasService {
     const qb = this.vagasRepository
       .createQueryBuilder('vaga')
       .leftJoin('vaga.company', 'company')
+      .leftJoin('vaga.assignedTo', 'assignedTo')
+      // T-T03 — Consultoria: colunas Cliente + Responsável na listagem do time.
+      // Projeção enxuta (sem passwordHash) — mesma cautela do resto do código.
+      .addSelect(['company.id', 'company.name', 'company.logoUrl'])
+      .addSelect([
+        'assignedTo.id',
+        'assignedTo.firstName',
+        'assignedTo.lastName',
+        'assignedTo.username',
+        'assignedTo.avatarUrl',
+      ])
       .orderBy('vaga.createdAt', 'DESC');
 
     if (ctx.team) {
-      // Team context: vaga pertence ao time se a sua company é do quotaOwner.
-      // Filtrar por createdById dos membros traz contaminação cruzada quando
-      // o usuário pertence a múltiplos times.
-      qb.where('company.ownerId = :ownerId', { ownerId: ctx.quotaOwner.id });
+      // Team context: vaga pertence ao time se a sua company é do quotaOwner
+      // OU se foi criada por qualquer membro ATIVO do time (T-T03/B81 fix —
+      // antes, vagas de time com companyId null ficavam invisíveis: o join
+      // é LEFT, então "company.ownerId = :ownerId" avalia para NULL/false
+      // quando company é null, excluindo a linha da cláusula WHERE).
+      const teamUserIds = await this.teamContextHelper.getTeamUserIds(
+        ctx.quotaOwner.id,
+      );
+      qb.where(
+        '(company.ownerId = :ownerId OR vaga.createdById IN (:...teamUserIds))',
+        { ownerId: ctx.quotaOwner.id, teamUserIds },
+      );
     } else {
       // Personal context: somente vagas do próprio user E sem associação a
       // company de time (companyId null ou company.ownerId = user.id).
@@ -257,7 +276,7 @@ export class VagasService {
       );
     }
 
-    const { page = 1, limit = 10, q, status, type, workMode } = dto;
+    const { page = 1, limit = 10, q, status, type, workMode, companyId, assignedToId } = dto;
 
     if (status) qb.andWhere('vaga.status = :status', { status });
     if (q) {
@@ -267,6 +286,9 @@ export class VagasService {
     }
     if (type) qb.andWhere('vaga.type = :type', { type });
     if (workMode) qb.andWhere('vaga.workMode = :workMode', { workMode });
+    // T-T03 — Consultoria: filtros extras de "Vagas do Time".
+    if (companyId) qb.andWhere('vaga.companyId = :companyId', { companyId });
+    if (assignedToId) qb.andWhere('vaga.assignedToId = :assignedToId', { assignedToId });
 
     const result = await paginate(qb, page, limit);
     return this.attachApplicationsCount(result);

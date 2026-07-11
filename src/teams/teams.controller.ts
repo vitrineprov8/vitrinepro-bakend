@@ -16,6 +16,7 @@ import { User } from '../users/user.entity';
 import { TeamsService } from './teams.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { UpdateTeamProfileDto } from './dto/update-team-profile.dto';
 
 @Controller('me/team')
 @UseGuards(JwtAuthGuard)
@@ -30,6 +31,18 @@ export class TeamsController {
   @Get()
   getMyTeam(@Request() req: { user: User }) {
     return this.teamsService.getOrCreateForUser(req.user);
+  }
+
+  /**
+   * T-T01/T-T08 — Updates the consultoria's public profile.
+   * Only the team OWNER may call this.
+   */
+  @Patch()
+  updateProfile(
+    @Request() req: { user: User },
+    @Body() dto: UpdateTeamProfileDto,
+  ) {
+    return this.teamsService.updateProfile(req.user, dto);
   }
 
   /** Returns the member list for the user's team */

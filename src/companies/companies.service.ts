@@ -116,6 +116,7 @@ export class CompaniesService {
       logoUrl: dto.logoUrl ?? null,
       industry: dto.industry ?? null,
       description: dto.description ?? null,
+      website: dto.website ?? null,
       // Always owned by the team owner so company ownership is consistent
       ownerId: quotaOwner.id,
     });
@@ -217,6 +218,7 @@ export class CompaniesService {
       logoUrl: dto.logoUrl !== undefined ? dto.logoUrl : company.logoUrl,
       industry: dto.industry !== undefined ? dto.industry : company.industry,
       description: dto.description !== undefined ? dto.description : company.description,
+      website: dto.website !== undefined ? dto.website : company.website,
     });
 
     return this.companiesRepository.save(company);

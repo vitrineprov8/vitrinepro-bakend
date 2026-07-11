@@ -20,6 +20,16 @@ export class Team {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  /** T-T01/T-T08 — Perfil da consultoria (logo, CNPJ opcional, bio pública). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  logoUrl: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  cnpj: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  bio: string | null;
+
   /**
    * The user who owns this team (the plan subscriber).
    * One user → one team (enforced by unique constraint on ownerId).
