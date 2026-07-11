@@ -81,4 +81,34 @@ export class UpdateProfileDto {
   @Min(0)
   @Max(60)
   hunterYearsExperience?: number;
+
+  // ── T-E08 — Empresa: "Página da Empresa" (workspace, edição pós-registro) ──
+  // Esses 3 campos só nasciam no cadastro (auth.service.ts) e não tinham
+  // nenhuma rota de edição depois — reusa o PATCH /profile genérico existente
+  // (mesmo padrão do resto do DTO, aplicado via Object.assign no service).
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  companyIndustry?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  companyLogoUrl?: string;
+
+  /**
+   * "Capa" da página da empresa (T-E08) — reusa `User.bannerUrl`, o mesmo
+   * campo já usado pelo banner do perfil de candidato/hunter (nenhuma coluna
+   * nova precisou ser criada).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  bannerUrl?: string;
 }

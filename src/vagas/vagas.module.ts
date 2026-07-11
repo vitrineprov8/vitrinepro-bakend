@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Vaga } from './vaga.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
+import { HunterInterest } from '../hunter-interests/hunter-interest.entity';
 import { Company } from '../companies/company.entity';
 import { Team } from '../teams/team.entity';
 import { TeamMember } from '../teams/team-member.entity';
@@ -15,7 +16,7 @@ import { SeoModule } from '../seo/seo.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Vaga, VagaApplication, Company, Team, TeamMember, User]),
+    TypeOrmModule.forFeature([Vaga, VagaApplication, HunterInterest, Company, Team, TeamMember, User]),
     // Provides VagaPublishLedgerService for publish slot tracking.
     // PlansModule (PlanLimitGuard) has been removed — limit enforcement
     // now lives inside VagasService.publish(), not at the guard layer.

@@ -90,9 +90,9 @@ export class HunterInterestsService {
         type: NotificationType.HUNTER_INTEREST_REQUESTED,
         title: 'Novo interesse de hunter',
         message: `Um hunter registrou interesse em trabalhar sua vaga.`,
-        // /app/empresa/vagas/:id/hunters não existe ainda (workspace Empresa é só
-        // placeholder + KPIs, sem CRUD de vaga) — manda pro workspace real em vez de 404.
-        link: `/app/empresa`,
+        // T-E04 — pipeline da vaga (workspace Empresa) tem a aba "Hunters" para
+        // aceitar/recusar o interesse.
+        link: `/app/empresa/vagas/${vagaId}`,
         metadata: { vagaId, hunterUserId: hunterUser.id },
       });
     }

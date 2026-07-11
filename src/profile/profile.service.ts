@@ -275,6 +275,13 @@ export class ProfileService {
 
     user.avatarUrl = url;
     user.avatarKey = key;
+    // T-E08 — contas empresa não têm um upload de "logo" dedicado; reusa este
+    // mesmo endpoint (o widget de avatar no shell já é o que a Página da
+    // Empresa chama de "logo"), preenchendo os dois campos: avatarUrl (usado
+    // no shell/app.vue) e companyLogoUrl (usado só em /empresa/:slug, T10).
+    if (user.isCompany) {
+      user.companyLogoUrl = url;
+    }
     const saved = await this.usersRepository.save(user);
     return this.sanitize(saved);
   }

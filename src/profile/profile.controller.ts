@@ -46,6 +46,20 @@ export class ProfileController {
   }
 
   /**
+   * T-E08 — Página da Empresa: upload de capa/banner.
+   * ProfileService.uploadBanner ja existia (mesmo padrão do avatar) mas
+   * nunca tinha rota exposta — usado hoje pela Página da Empresa (T10/T-E08).
+   */
+  @Post('banner')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } }),
+  )
+  uploadBanner(@Request() req, @UploadedFile() file: Express.Multer.File) {
+    return this.profileService.uploadBanner(req.user.id, file);
+  }
+
+  /**
    * Sets or clears the active team context for the authenticated user.
    *
    * Body: { teamId: string | null }

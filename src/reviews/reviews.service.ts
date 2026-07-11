@@ -131,11 +131,16 @@ export class ReviewsService {
    * GET /me/placements/pending-review — placements da empresa (dono/delegado
    * de time) que já podem ser avaliados (confirmados, hunter-sourced) e ainda
    * não têm review. Alimenta a tab "Avaliações pendentes" (design-spec 05).
+   *
+   * Inclui dados do hunter e do candidato (via application) — o front precisa
+   * exibir "Avalie {hunter}" com nome/avatar, e o cargo/candidato de contexto.
    */
-  async listPendingForCompany(actorId: string): Promise<Placement[]> {
-    return this.placementsRepository
+  async listPendingForCompany(actorId: string): Promise<unknown[]> {
+    const placements = await this.placementsRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.vaga', 'vaga')
+      .leftJoinAndSelect('p.hunter', 'hunter')
+      .leftJoinAndSelect('p.application', 'application')
       .leftJoin(HunterReview, 'review', 'review.placementId = p.id')
       .where('vaga.createdById = :actorId', { actorId })
       .andWhere('p.hunterId IS NOT NULL')
@@ -143,6 +148,23 @@ export class ReviewsService {
       .andWhere('review.id IS NULL')
       .orderBy('p.confirmedAt', 'DESC')
       .getMany();
+
+    return placements.map((p) => ({
+      id: p.id,
+      vagaId: p.vagaId,
+      vagaTitle: p.vaga?.title ?? null,
+      confirmedAt: p.confirmedAt,
+      candidateName: p.application?.snapshotFullName ?? null,
+      hunter: p.hunter
+        ? {
+            id: p.hunter.id,
+            firstName: p.hunter.firstName,
+            lastName: p.hunter.lastName,
+            username: p.hunter.username,
+            avatarUrl: p.hunter.avatarUrl,
+          }
+        : null,
+    }));
   }
 
   /** Agregação usada no perfil público do hunter (B5 — `HuntersService.getMetrics`). */

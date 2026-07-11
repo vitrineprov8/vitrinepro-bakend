@@ -11,6 +11,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import slugify from 'slugify';
 import { Vaga, VagaSegment, VagaStatus } from './vaga.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
+import { HunterInterest, HunterInterestStatus } from '../hunter-interests/hunter-interest.entity';
 import { User, UserRole, PlanTier, PlanStatus } from '../users/user.entity';
 import { VagaPublishLedger } from '../vaga-publish-ledger/vaga-publish-ledger.entity';
 import { getCurrentCycle } from '../vaga-publish-ledger/cycle.util';
@@ -30,7 +31,11 @@ import { ListVagasDto } from './dto/list-vagas.dto';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
 
-type VagaWithCount = Vaga & { applicationsCount: number };
+type VagaWithCount = Vaga & {
+  applicationsCount: number;
+  hunterInterestsAcceptedCount?: number;
+  hunterInterestsPendingCount?: number;
+};
 
 @Injectable()
 export class VagasService {
@@ -41,6 +46,8 @@ export class VagasService {
     private vagasRepository: Repository<Vaga>,
     @InjectRepository(VagaApplication)
     private vagaApplicationsRepository: Repository<VagaApplication>,
+    @InjectRepository(HunterInterest)
+    private hunterInterestsRepository: Repository<HunterInterest>,
     @InjectRepository(Company)
     private companiesRepository: Repository<Company>,
     @InjectRepository(Team)
@@ -72,11 +79,46 @@ export class VagasService {
       .groupBy('app.vagaId')
       .getRawMany<{ vagaId: string; count: string }>();
     const counts = new Map(rows.map((r) => [r.vagaId, parseInt(r.count, 10)]));
+
+    // T-E03 — Empresa: coluna "Hunters" (aceitos/máx) na listagem de vagas.
+    // Só consulta hunter_interests se ao menos uma vaga da página aceita
+    // hunters (evita join/consulta desnecessária no caso comum sem hunters).
+    const hunterIds = result.data.filter((v) => v.allowHunters).map((v) => v.id);
+    let acceptedByVaga = new Map<string, number>();
+    let pendingByVaga = new Map<string, number>();
+    if (hunterIds.length > 0) {
+      const interestRows = await this.hunterInterestsRepository
+        .createQueryBuilder('hi')
+        .select('hi.vagaId', 'vagaId')
+        .addSelect('hi.status', 'status')
+        .addSelect('COUNT(*)', 'count')
+        .where('hi.vagaId IN (:...ids)', { ids: hunterIds })
+        .groupBy('hi.vagaId')
+        .addGroupBy('hi.status')
+        .getRawMany<{ vagaId: string; status: HunterInterestStatus; count: string }>();
+      acceptedByVaga = new Map(
+        interestRows
+          .filter((r) => r.status === HunterInterestStatus.ACCEPTED)
+          .map((r) => [r.vagaId, parseInt(r.count, 10)]),
+      );
+      pendingByVaga = new Map(
+        interestRows
+          .filter((r) => r.status === HunterInterestStatus.PENDING)
+          .map((r) => [r.vagaId, parseInt(r.count, 10)]),
+      );
+    }
+
     return {
       ...result,
       data: result.data.map((v) => ({
         ...v,
         applicationsCount: counts.get(v.id) ?? 0,
+        ...(v.allowHunters
+          ? {
+              hunterInterestsAcceptedCount: acceptedByVaga.get(v.id) ?? 0,
+              hunterInterestsPendingCount: pendingByVaga.get(v.id) ?? 0,
+            }
+          : {}),
       })) as VagaWithCount[],
     };
   }
