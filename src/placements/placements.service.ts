@@ -28,6 +28,8 @@ import { ResolveDisputeDto, DisputeResolution } from './dto/resolve-dispute.dto'
 import { UpdatePlacementSplitDto } from './dto/update-placement-split.dto';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -47,6 +49,7 @@ export class PlacementsService {
     private teamContextHelper: TeamContextHelper,
     private mailService: MailService,
     private adminAuditLogService: AdminAuditLogService,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async assertCanManageVaga(
@@ -186,6 +189,14 @@ export class PlacementsService {
           application.vaga.title,
           placement.hunterShareAmount as number,
         );
+        void this.notificationsService.create({
+          userId: hunter.id,
+          type: NotificationType.PLACEMENT_HIRED,
+          title: 'Indicação contratada!',
+          message: `Sua indicação para "${application.vaga.title}" foi marcada como contratada. Confirme o placement para liberar a garantia.`,
+          link: `/app/hunter/vagas/${application.vagaId}`,
+          metadata: { placementId: saved.id, vagaId: application.vagaId },
+        });
       }
     }
 
@@ -229,6 +240,16 @@ export class PlacementsService {
           saved.guaranteeEndsAt as Date,
           saved.id,
         );
+        void this.notificationsService.create({
+          userId: company.id,
+          type: NotificationType.PLACEMENT_CONFIRMED,
+          title: 'Placement confirmado',
+          message: `O placement de "${vaga.title}" foi confirmado${opts.autoConfirmed ? ' automaticamente' : ' pelo hunter'}. Garantia até ${(saved.guaranteeEndsAt as Date).toLocaleDateString('pt-BR')}.`,
+          // Nota: /placements/:id/timeline (P3) ainda não tem página no front (gap conhecido do B9,
+          // "timeline visual" pendente) — aponta pro workspace Empresa real em vez de gerar 404.
+          link: `/app/empresa`,
+          metadata: { placementId: saved.id, vagaId: vaga.id },
+        });
       }
     }
 
@@ -266,6 +287,15 @@ export class PlacementsService {
           dto.reason,
           saved.id,
         );
+        void this.notificationsService.create({
+          userId: company.id,
+          type: NotificationType.PLACEMENT_DISPUTED,
+          title: 'Placement contestado',
+          message: `O hunter contestou o placement de "${vaga.title}": ${dto.reason}`,
+          // Ver nota em applyConfirmation() — /placements/:id/timeline não existe no front ainda.
+          link: `/app/empresa`,
+          metadata: { placementId: saved.id, vagaId: vaga.id },
+        });
       }
     }
 
@@ -357,6 +387,15 @@ export class PlacementsService {
         placement.vaga.title,
         dto.reason,
       );
+      void this.notificationsService.create({
+        userId: hunter.id,
+        type: NotificationType.PLACEMENT_GUARANTEE_BROKEN,
+        title: 'Garantia quebrada',
+        message: `A empresa reportou saída do candidato de "${placement.vaga.title}": ${dto.reason}`,
+        // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
+        link: `/app/hunter`,
+        metadata: { placementId: saved.id },
+      });
     }
 
     return saved;
@@ -503,6 +542,15 @@ export class PlacementsService {
             placement.vaga.title,
             saved.hunterShareAmount as number,
           );
+          void this.notificationsService.create({
+            userId: hunter.id,
+            type: NotificationType.PLACEMENT_FEE_RELEASED,
+            title: 'Comissão liberada',
+            message: `Sua comissão de "${placement.vaga.title}" foi liberada.`,
+            // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
+            link: `/app/hunter`,
+            metadata: { placementId: saved.id },
+          });
         }
       }
     }
@@ -530,6 +578,15 @@ export class PlacementsService {
             placement.vaga.title,
             saved.hunterShareAmount as number,
           );
+          void this.notificationsService.create({
+            userId: hunter.id,
+            type: NotificationType.PLACEMENT_FEE_RELEASED,
+            title: 'Comissão liberada',
+            message: `Sua comissão de "${placement.vaga.title}" foi liberada.`,
+            // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
+            link: `/app/hunter`,
+            metadata: { placementId: saved.id },
+          });
         }
       }
       return saved;

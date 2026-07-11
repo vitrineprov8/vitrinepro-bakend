@@ -13,6 +13,7 @@ import {
   placementGuaranteeBrokenTemplate,
   placementFeeReleasedTemplate,
   placementSplitChangedTemplate,
+  vagaUnpublishedByAdminTemplate,
   type MailContent,
 } from './mail.templates';
 
@@ -235,6 +236,18 @@ export class MailService {
     return this.sendTemplate(
       to,
       placementSplitChangedTemplate(companyName, newPlatformSharePercent, reason),
+    );
+  }
+
+  sendVagaUnpublishedByAdmin(
+    to: string,
+    ownerFirstName: string,
+    vagaTitle: string,
+    reason: string,
+  ): Promise<SendMailResult> {
+    return this.sendTemplate(
+      to,
+      vagaUnpublishedByAdminTemplate(ownerFirstName, vagaTitle, reason),
     );
   }
 }

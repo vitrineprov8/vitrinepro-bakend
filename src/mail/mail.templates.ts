@@ -268,3 +268,20 @@ export function placementSplitChangedTemplate(
     ),
   };
 }
+
+/** B24 — admin despublicou uma vaga (moderação). */
+export function vagaUnpublishedByAdminTemplate(
+  ownerFirstName: string,
+  vagaTitle: string,
+  reason: string,
+): MailContent {
+  return {
+    subject: `Sua vaga foi despublicada — ${vagaTitle}`,
+    html: layout(
+      'Vaga despublicada por nossa equipe',
+      `Olá <strong>${ownerFirstName}</strong>, a vaga <strong>${vagaTitle}</strong> foi despublicada por nossa equipe de moderação.<br><br>
+       <strong>Motivo:</strong> ${reason}<br><br>
+       Você pode editar a vaga e publicá-la novamente assim que o ponto apontado for corrigido. Em caso de dúvidas, entre em contato com o suporte.`,
+    ),
+  };
+}

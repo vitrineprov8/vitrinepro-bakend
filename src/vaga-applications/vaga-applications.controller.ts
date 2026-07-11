@@ -3,11 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +20,7 @@ import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
 import { UpdateStageNotesDto } from './dto/update-stage-notes.dto';
+import { ListOwnerApplicationsDto } from './dto/list-owner-applications.dto';
 
 @Controller()
 export class VagaApplicationsController {
@@ -52,6 +55,79 @@ export class VagaApplicationsController {
     @Request() req: { user: { id: string; role: UserRole } },
   ) {
     return this.applicationsService.listByVaga(id, req.user.id, req.user.role);
+  }
+
+  /**
+   * GET /applications/me-as-owner
+   * T-E05 — Empresa: "Candidatos" (tabela plana de todas as vagas do dono,
+   * com filtros: vagaId/pipelineStage/source/isRejected/q + paginação).
+   */
+  @Get('applications/me-as-owner')
+  @UseGuards(JwtAuthGuard)
+  listByOwner(
+    @Request() req: { user: { id: string } },
+    @Query() dto: ListOwnerApplicationsDto,
+  ) {
+    return this.applicationsService.listByOwner(req.user.id, dto);
+  }
+
+  /**
+   * GET /applications/me-as-owner/export
+   * Mesmos filtros do endpoint acima, sem paginação, devolvendo CSV.
+   */
+  @Get('applications/me-as-owner/export')
+  @UseGuards(JwtAuthGuard)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="candidatos.csv"')
+  async exportByOwner(
+    @Request() req: { user: { id: string } },
+    @Query() dto: ListOwnerApplicationsDto,
+  ) {
+    const rows = (await this.applicationsService.listByOwnerForExport(
+      req.user.id,
+      dto,
+    )) as Array<{
+      vagaTitle: string | null;
+      snapshotFullName: string;
+      snapshotEmail: string | null;
+      snapshotPhone: string | null;
+      pipelineStage: string;
+      source: string;
+      isRejected: boolean;
+      generalScore: number | null;
+      createdAt: Date;
+    }>;
+
+    const header = [
+      'Vaga',
+      'Nome',
+      'E-mail',
+      'Telefone',
+      'Etapa',
+      'Origem',
+      'Rejeitado',
+      'Nota',
+      'Criado em',
+    ];
+    const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      header.join(','),
+      ...rows.map((r) =>
+        [
+          escape(r.vagaTitle),
+          escape(r.snapshotFullName),
+          escape(r.snapshotEmail ?? '(mascarado)'),
+          escape(r.snapshotPhone ?? '(mascarado)'),
+          escape(r.pipelineStage),
+          escape(r.source),
+          escape(r.isRejected ? 'Sim' : 'Não'),
+          escape(r.generalScore ?? ''),
+          escape(new Date(r.createdAt).toLocaleDateString('pt-BR')),
+        ].join(','),
+      ),
+    ];
+
+    return '﻿' + lines.join('\n');
   }
 
   /**

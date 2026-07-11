@@ -21,6 +21,9 @@ import { TeamMember, TeamMemberStatus, TeamRole } from '../teams/team-member.ent
 import { TeamContextHelper } from '../teams/team-context.helper';
 import { SeoService } from '../seo/seo.service';
 import { TombstoneType, TombstoneReason } from '../seo/slug-tombstone.entity';
+import { MailService } from '../mail/mail.service';
+import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 import { CreateVagaDto } from './dto/create-vaga.dto';
 import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
@@ -44,10 +47,14 @@ export class VagasService {
     private teamsRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMembersRepository: Repository<TeamMember>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
     @InjectDataSource()
     private dataSource: DataSource,
     private teamContextHelper: TeamContextHelper,
     private seoService: SeoService,
+    private mailService: MailService,
+    private adminAuditLogService: AdminAuditLogService,
   ) {}
 
   private async attachApplicationsCount(
@@ -674,6 +681,60 @@ export class VagasService {
 
     vaga.status = VagaStatus.CLOSED;
     return this.vagasRepository.save(vaga);
+  }
+
+  /**
+   * B24 (A6) — moderação admin: despublica uma vaga imprópria de qualquer
+   * dono, com motivo obrigatório (audit log), tombstone automático (mesmo
+   * padrão de `remove()`) e notificação por e-mail ao dono. Diferente do
+   * `unpublish()` de auto-serviço acima — este não passa por
+   * `assertVagaAccess` (é ação de moderação, não de gestão do próprio dono).
+   */
+  async adminUnpublish(vagaId: string, adminId: string, reason: string): Promise<Vaga> {
+    const vaga = await this.findById(vagaId);
+    if (vaga.status !== VagaStatus.PUBLISHED) {
+      throw new BadRequestException('Apenas vagas publicadas podem ser despublicadas.');
+    }
+
+    vaga.status = VagaStatus.CLOSED;
+    const saved = await this.vagasRepository.save(vaga);
+
+    this.seoService
+      .createTombstone({
+        type: TombstoneType.VAGA,
+        slug: saved.slug,
+        reason: TombstoneReason.HIDDEN,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Failed to create tombstone for admin-unpublished vaga slug "${saved.slug}"`,
+          err,
+        ),
+      );
+
+    if (saved.createdById) {
+      const owner = await this.usersRepository.findOne({ where: { id: saved.createdById } });
+      if (owner) {
+        void this.mailService.sendVagaUnpublishedByAdmin(
+          owner.email,
+          owner.firstName,
+          saved.title,
+          reason,
+        );
+      }
+    }
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.VAGA_UNPUBLISH_ADMIN,
+      targetType: 'Vaga',
+      targetId: saved.id,
+      reason,
+      payloadBefore: { status: VagaStatus.PUBLISHED },
+      payloadAfter: { status: saved.status },
+    });
+
+    return saved;
   }
 
   async remove(id: string, actor: User): Promise<void> {

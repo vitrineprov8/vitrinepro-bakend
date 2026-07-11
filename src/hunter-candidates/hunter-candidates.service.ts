@@ -19,6 +19,8 @@ import { CreateHunterCandidateDto } from './dto/create-hunter-candidate.dto';
 import { UpdateHunterCandidateDto } from './dto/update-hunter-candidate.dto';
 import { SubmitCandidateDto } from './dto/submit-candidate.dto';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 /**
  * B3 — Hunter talent pool + candidate submission.
@@ -48,6 +50,7 @@ export class HunterCandidatesService {
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
     private readonly mail: MailService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ── CRUD do pool ────────────────────────────────────────────────────────────
@@ -173,6 +176,19 @@ export class HunterCandidatesService {
     // B14 — envia e-mail real via Resend (ou stub-log se RESEND_API_KEY ausente).
     await this.mail.sendConsentRequest(candidate.email, candidate.fullName, token);
 
+    // B13 — notificação in-app só faz sentido se o candidato já tiver conta
+    // na plataforma (candidatos "fantasma" cadastrados só pelo hunter não têm userId).
+    if (candidate.linkedUserId) {
+      void this.notificationsService.create({
+        userId: candidate.linkedUserId,
+        type: NotificationType.CONSENT_REQUESTED,
+        title: 'Solicitação de consentimento',
+        message: `Um hunter solicitou seu consentimento para compartilhar seus dados (LGPD).`,
+        link: null,
+        metadata: { candidateId: candidate.id },
+      });
+    }
+
     // Em produção NÃO retornar o token; só em dev para facilitar testes.
     const devToken =
       process.env.NODE_ENV !== 'production' ? { consentToken: token } : {};
@@ -289,14 +305,29 @@ export class HunterCandidatesService {
       hunterCandidateId: candidate.id,
     });
 
+    let saved: VagaApplication;
     try {
-      return await this.applicationsRepo.save(application);
+      saved = await this.applicationsRepo.save(application);
     } catch {
       // Colisão com o índice único parcial (vagaId, hunterCandidateId)
       throw new ConflictException(
         'Este candidato já está neste processo seletivo.',
       );
     }
+
+    if (vaga.createdById) {
+      void this.notificationsService.create({
+        userId: vaga.createdById,
+        type: NotificationType.CANDIDATE_SUBMITTED,
+        title: 'Novo candidato submetido',
+        message: `Um hunter submeteu "${candidate.fullName}" para a vaga "${vaga.title}".`,
+        // /app/empresa/vagas/:id/pipeline não existe ainda — manda pro workspace real.
+        link: `/app/empresa`,
+        metadata: { vagaId: vaga.id, applicationId: saved.id },
+      });
+    }
+
+    return saved;
   }
 
   /** Lists all applications submitted by this hunter (dashboard T-H08). */

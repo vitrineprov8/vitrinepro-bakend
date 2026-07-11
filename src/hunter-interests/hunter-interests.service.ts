@@ -11,6 +11,8 @@ import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { User, UserRole, HunterVerificationStatus } from '../users/user.entity';
 import { UpdateHunterInterestDto } from './dto/update-hunter-interest.dto';
 import { ExpressInterestDto } from './dto/express-interest.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 @Injectable()
 export class HunterInterestsService {
@@ -19,6 +21,7 @@ export class HunterInterestsService {
     private hunterInterestsRepository: Repository<HunterInterest>,
     @InjectRepository(Vaga)
     private vagasRepository: Repository<Vaga>,
+    private notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -79,7 +82,22 @@ export class HunterInterestsService {
       termsAcceptedAt: dto.termsAccepted ? new Date() : null,
     });
 
-    return this.hunterInterestsRepository.save(interest);
+    const saved = await this.hunterInterestsRepository.save(interest);
+
+    if (vaga.createdById) {
+      void this.notificationsService.create({
+        userId: vaga.createdById,
+        type: NotificationType.HUNTER_INTEREST_REQUESTED,
+        title: 'Novo interesse de hunter',
+        message: `Um hunter registrou interesse em trabalhar sua vaga.`,
+        // /app/empresa/vagas/:id/hunters não existe ainda (workspace Empresa é só
+        // placeholder + KPIs, sem CRUD de vaga) — manda pro workspace real em vez de 404.
+        link: `/app/empresa`,
+        metadata: { vagaId, hunterUserId: hunterUser.id },
+      });
+    }
+
+    return saved;
   }
 
   /**
@@ -224,6 +242,23 @@ export class HunterInterestsService {
     }
 
     interest.status = dto.status;
-    return this.hunterInterestsRepository.save(interest);
+    const saved = await this.hunterInterestsRepository.save(interest);
+
+    void this.notificationsService.create({
+      userId: hunterUserId,
+      type: NotificationType.HUNTER_INTEREST_DECIDED,
+      title:
+        dto.status === HunterInterestStatus.ACCEPTED
+          ? 'Interesse aceito'
+          : 'Interesse recusado',
+      message:
+        dto.status === HunterInterestStatus.ACCEPTED
+          ? 'Seu interesse nesta vaga foi aceito. Você já pode ver os dados de contato.'
+          : 'Seu interesse nesta vaga foi recusado.',
+      link: `/app/hunter/vagas/${vagaId}`,
+      metadata: { vagaId, status: dto.status },
+    });
+
+    return saved;
   }
 }

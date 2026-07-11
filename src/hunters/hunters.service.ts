@@ -19,6 +19,9 @@ import { SubmitVerificationDto } from './dto/submit-verification.dto';
 import { RejectVerificationDto } from './dto/reject-verification.dto';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
+import { ReviewsService } from '../reviews/reviews.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 /** B5 — campos públicos de um card do diretório `GET /hunters` (T07). */
 export interface HunterDirectoryCard {
@@ -45,8 +48,10 @@ export interface HunterMetrics {
   taxaAproveitamento: number | null;
   /** Dias médios entre a submissão e a 1ª mudança de etapa (proxy de "tempo até shortlist"). */
   tempoMedioAteAbordagemDias: number | null;
-  /** Média de `generalScore` (0-10) das indicações avaliadas por recrutadores. Proxy até B10 (avaliações). */
+  /** Média (1-5) das avaliações reais de empresas via `HunterReview` (RN-NOVA-07, B10). */
   avaliacaoMedia: number | null;
+  /** Total de avaliações recebidas (B10). */
+  totalReviews: number;
 }
 
 const PUBLIC_USER_FIELDS = {
@@ -78,6 +83,8 @@ export class HuntersService {
     private storageService: StorageService,
     private mailService: MailService,
     private adminAuditLogService: AdminAuditLogService,
+    private reviewsService: ReviewsService,
+    private notificationsService: NotificationsService,
   ) {}
 
   /** T07 — diretório público de hunters, com filtros e paginação. */
@@ -167,6 +174,9 @@ export class HuntersService {
 
   /** Métricas derivadas de `VagaApplication` — ver notas de cada campo em `HunterMetrics`. */
   async getMetrics(hunterId: string): Promise<HunterMetrics> {
+    const { avgRating, totalReviews } =
+      await this.reviewsService.getHunterStats(hunterId);
+
     const applications = await this.vagaApplicationsRepository.find({
       where: { submittedByHunterId: hunterId },
       select: [
@@ -184,7 +194,8 @@ export class HuntersService {
         totalIndicacoes: 0,
         taxaAproveitamento: null,
         tempoMedioAteAbordagemDias: null,
-        avaliacaoMedia: null,
+        avaliacaoMedia: avgRating,
+        totalReviews,
       };
     }
 
@@ -217,21 +228,12 @@ export class HuntersService {
           ) / 10
         : null;
 
-    const scored = applications.filter((a) => a.generalScore !== null);
-    const avaliacaoMedia =
-      scored.length > 0
-        ? Math.round(
-            (scored.reduce((sum, a) => sum + Number(a.generalScore), 0) /
-              scored.length) *
-              10,
-          ) / 10
-        : null;
-
     return {
       totalIndicacoes,
       taxaAproveitamento,
       tempoMedioAteAbordagemDias,
-      avaliacaoMedia,
+      avaliacaoMedia: avgRating,
+      totalReviews,
     };
   }
 
@@ -332,6 +334,14 @@ export class HuntersService {
 
     void this.mailService.sendVerificationApproved(user.email, user.firstName);
 
+    void this.notificationsService.create({
+      userId: user.id,
+      type: NotificationType.VERIFICATION_DECIDED,
+      title: 'Perfil verificado',
+      message: 'Seu perfil foi verificado! O selo "✓ Verificado" já está ativo no seu diretório e perfil público.',
+      link: '/app/hunter/perfil',
+    });
+
     void this.adminAuditLogService.record({
       adminId,
       action: AdminAuditAction.HUNTER_VERIFICATION_APPROVE,
@@ -366,6 +376,14 @@ export class HuntersService {
       user.firstName,
       dto.reason,
     );
+
+    void this.notificationsService.create({
+      userId: user.id,
+      type: NotificationType.VERIFICATION_DECIDED,
+      title: 'Verificação recusada',
+      message: `Sua solicitação de verificação foi recusada: ${dto.reason}`,
+      link: '/app/hunter/perfil',
+    });
 
     void this.adminAuditLogService.record({
       adminId,

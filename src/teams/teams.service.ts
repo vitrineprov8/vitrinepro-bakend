@@ -12,6 +12,8 @@ import { User, PlanTier } from '../users/user.entity';
 import { PLAN_SEAT_LIMITS } from '../plans/plan-limits';
 import { TeamContextHelper } from './team-context.helper';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
 
 /** Plans that unlock multi-user team functionality */
 const TEAM_ALLOWED_PLANS: PlanTier[] = [PlanTier.TEAM, PlanTier.ENTERPRISE];
@@ -25,6 +27,7 @@ export class TeamsService {
     private teamMembersRepository: Repository<TeamMember>,
     private teamContextHelper: TeamContextHelper,
     private mailService: MailService,
+    private notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -217,6 +220,14 @@ export class TeamsService {
       dto.role,
       inviteToken,
     );
+
+    void this.notificationsService.createForEmailIfExists(dto.email, {
+      type: NotificationType.TEAM_INVITE,
+      title: 'Convite para time',
+      message: `${inviterName} convidou você para o time "${team.name}".`,
+      link: '/app/escolher-perfil',
+      metadata: { teamId: team.id },
+    });
 
     // Em produção não devolve o token no response — só chega ao convidado por e-mail.
     if (process.env.NODE_ENV === 'production') {

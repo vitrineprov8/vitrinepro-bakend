@@ -17,6 +17,10 @@ import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateGeneralDto } from './dto/update-general.dto';
 import { UpdateStageNotesDto } from './dto/update-stage-notes.dto';
+import { ListOwnerApplicationsDto } from './dto/list-owner-applications.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/notification.entity';
+import { paginate } from '../common/paginate.helper';
 
 @Injectable()
 export class VagaApplicationsService {
@@ -32,6 +36,7 @@ export class VagaApplicationsService {
     @InjectRepository(PipelineTemplate)
     private pipelineTemplatesRepository: Repository<PipelineTemplate>,
     private teamContextHelper: TeamContextHelper,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async assertCanManageVaga(
@@ -220,6 +225,165 @@ export class VagaApplicationsService {
     });
   }
 
+  /**
+   * T-E05 — Empresa: "Candidatos" (tabela plana de candidaturas de TODAS as
+   * vagas do dono, com filtros). Reusa a mesma lógica de mascaramento de
+   * contato do listByVaga, mas agregando por dono em vez de por vaga única.
+   *
+   * Escopo: só vagas com `createdById = actorId` (contas empresa não usam
+   * delegação de time como o B15 — isso é hunter-only por enquanto).
+   */
+  private async resolveOwnerScope(
+    actorId: string,
+    dto: ListOwnerApplicationsDto,
+  ): Promise<{ vagaIds: string[]; stageOrderById: Map<string, number>; revealThreshold: number }> {
+    const ownedVagas = await this.vagasRepository.find({
+      where: { createdById: actorId },
+      select: ['id'],
+    });
+    let vagaIds = ownedVagas.map((v) => v.id);
+
+    if (dto.vagaId) {
+      if (!vagaIds.includes(dto.vagaId)) {
+        throw new ForbiddenException(
+          'Você não tem permissão para ver as candidaturas desta vaga.',
+        );
+      }
+      vagaIds = [dto.vagaId];
+    }
+
+    const owner = await this.usersRepository.findOne({
+      where: { id: actorId },
+      select: ['id', 'hunterContactRevealStageOrder'],
+    });
+    const template = await this.pipelineTemplatesRepository.findOne({
+      where: { ownerId: actorId },
+    });
+    const stageOrderById = new Map(
+      (template?.stages ?? []).map((s) => [s.id, s.order]),
+    );
+
+    return {
+      vagaIds,
+      stageOrderById,
+      revealThreshold: owner?.hunterContactRevealStageOrder ?? 2,
+    };
+  }
+
+  async listByOwner(
+    actorId: string,
+    dto: ListOwnerApplicationsDto,
+  ): Promise<unknown> {
+    const { vagaIds, stageOrderById, revealThreshold } =
+      await this.resolveOwnerScope(actorId, dto);
+
+    if (vagaIds.length === 0) {
+      return { data: [], total: 0, page: 1, lastPage: 0 };
+    }
+
+    const qb = this.applicationsRepository
+      .createQueryBuilder('app')
+      .leftJoinAndSelect('app.vaga', 'vaga')
+      .where('app.vagaId IN (:...vagaIds)', { vagaIds })
+      .orderBy('app.createdAt', 'DESC');
+
+    if (dto.pipelineStage) {
+      qb.andWhere('app.pipelineStage = :pipelineStage', {
+        pipelineStage: dto.pipelineStage,
+      });
+    }
+    if (dto.source) {
+      qb.andWhere('app.source = :source', { source: dto.source });
+    }
+    if (dto.isRejected !== undefined) {
+      qb.andWhere('app.isRejected = :isRejected', {
+        isRejected: dto.isRejected,
+      });
+    }
+    if (dto.q) {
+      qb.andWhere('LOWER(app.snapshotFullName) LIKE :q', {
+        q: `%${dto.q.toLowerCase()}%`,
+      });
+    }
+
+    const result = await paginate(qb, dto.page, dto.limit);
+
+    return {
+      ...result,
+      data: result.data.map((a) =>
+        this.serializeOwnerApplication(a, stageOrderById, revealThreshold),
+      ),
+    };
+  }
+
+  /** Same filters as listByOwner, but no pagination — feeds CSV export. */
+  async listByOwnerForExport(
+    actorId: string,
+    dto: ListOwnerApplicationsDto,
+  ): Promise<unknown[]> {
+    const { vagaIds, stageOrderById, revealThreshold } =
+      await this.resolveOwnerScope(actorId, dto);
+
+    if (vagaIds.length === 0) return [];
+
+    const qb = this.applicationsRepository
+      .createQueryBuilder('app')
+      .leftJoinAndSelect('app.vaga', 'vaga')
+      .where('app.vagaId IN (:...vagaIds)', { vagaIds })
+      .orderBy('app.createdAt', 'DESC');
+
+    if (dto.pipelineStage) {
+      qb.andWhere('app.pipelineStage = :pipelineStage', {
+        pipelineStage: dto.pipelineStage,
+      });
+    }
+    if (dto.source) {
+      qb.andWhere('app.source = :source', { source: dto.source });
+    }
+    if (dto.isRejected !== undefined) {
+      qb.andWhere('app.isRejected = :isRejected', {
+        isRejected: dto.isRejected,
+      });
+    }
+    if (dto.q) {
+      qb.andWhere('LOWER(app.snapshotFullName) LIKE :q', {
+        q: `%${dto.q.toLowerCase()}%`,
+      });
+    }
+
+    const apps = await qb.getMany();
+    return apps.map((a) =>
+      this.serializeOwnerApplication(a, stageOrderById, revealThreshold),
+    );
+  }
+
+  private serializeOwnerApplication(
+    a: VagaApplication,
+    stageOrderById: Map<string, number>,
+    revealThreshold: number,
+  ) {
+    const isHunterSourced = a.source === ApplicationSource.HUNTER;
+    const stageOrder = stageOrderById.get(a.pipelineStage) ?? 0;
+    const contactMasked = isHunterSourced && stageOrder < revealThreshold;
+
+    return {
+      id: a.id,
+      vagaId: a.vagaId,
+      vagaTitle: a.vaga?.title ?? null,
+      vagaSlug: a.vaga?.slug ?? null,
+      source: a.source,
+      pipelineStage: a.pipelineStage,
+      isRejected: a.isRejected,
+      snapshotFullName: a.snapshotFullName,
+      snapshotEmail: contactMasked ? null : a.snapshotEmail,
+      snapshotPhone: contactMasked ? null : a.snapshotPhone,
+      snapshotLocation: a.snapshotLocation,
+      contactMasked,
+      generalScore: a.generalScore,
+      createdAt: a.createdAt,
+    };
+  }
+
   async removeApplication(applicationId: string, actorId: string): Promise<void> {
     const app = await this.applicationsRepository.findOne({
       where: { id: applicationId },
@@ -274,6 +438,29 @@ export class VagaApplicationsService {
           byUserId: actorId,
         };
         app.stageHistory = [...(app.stageHistory ?? []), historyEntry];
+
+        const vagaTitle = app.vaga?.title ?? 'sua candidatura';
+        const notifyPayload = {
+          type: NotificationType.STAGE_CHANGED,
+          title: 'Etapa atualizada',
+          message: `Sua candidatura para "${vagaTitle}" avançou para a etapa "${dto.pipelineStage}".`,
+          // Candidato direto: manda pra página pública da vaga (slug, não id — rota é /vaga/:slug).
+          link: app.vaga?.slug ? `/vaga/${app.vaga.slug}` : null,
+          metadata: { applicationId: app.id, vagaId: app.vagaId, stage: dto.pipelineStage },
+        };
+        if (app.userId) {
+          void this.notificationsService.create({ ...notifyPayload, userId: app.userId });
+        }
+        if (app.submittedByHunterId) {
+          void this.notificationsService.create({
+            ...notifyPayload,
+            userId: app.submittedByHunterId,
+            message: `A candidatura de "${app.snapshotFullName ?? 'seu candidato'}" para "${vagaTitle}" avançou para a etapa "${dto.pipelineStage}".`,
+            // Hunter: /app/hunter/submissoes não existe — a tela real de acompanhamento
+            // das submissões é /app/hunter/candidatos (lista + status de cada uma).
+            link: `/app/hunter/candidatos`,
+          });
+        }
       }
       app.pipelineStage = dto.pipelineStage;
     }

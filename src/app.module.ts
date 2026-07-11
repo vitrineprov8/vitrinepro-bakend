@@ -37,6 +37,9 @@ import { MailModule } from './mail/mail.module';
 import { HuntersModule } from './hunters/hunters.module';
 import { PlacementsModule } from './placements/placements.module';
 import { AdminAuditLogModule } from './admin-audit-log/admin-audit-log.module';
+import { AdminUsersModule } from './admin-users/admin-users.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -79,6 +82,9 @@ import { AdminAuditLogModule } from './admin-audit-log/admin-audit-log.module';
     HuntersModule,
     PlacementsModule,
     AdminAuditLogModule,
+    AdminUsersModule,
+    ReviewsModule,
+    NotificationsModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],
