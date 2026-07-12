@@ -12,6 +12,7 @@ import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { CV } from '../cv/cv.entity';
 import { User, UserRole } from '../users/user.entity';
 import { PipelineTemplate } from '../pipeline-templates/pipeline-template.entity';
+import { Placement } from '../placements/placement.entity';
 import { TeamContextHelper } from '../teams/team-context.helper';
 import { ApplyDto } from './dto/apply.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -36,6 +37,8 @@ export class VagaApplicationsService {
     private usersRepository: Repository<User>,
     @InjectRepository(PipelineTemplate)
     private pipelineTemplatesRepository: Repository<PipelineTemplate>,
+    @InjectRepository(Placement)
+    private placementsRepository: Repository<Placement>,
     private teamContextHelper: TeamContextHelper,
     private notificationsService: NotificationsService,
   ) {}
@@ -190,10 +193,22 @@ export class VagaApplicationsService {
       );
     }
 
+    // B9/Placement — anexa o placement (se houver) de cada candidatura, para
+    // o front decidir se mostra "Marcar como contratado" / status / timeline.
+    const appIds = apps.map((a) => a.id);
+    const placements = appIds.length
+      ? await this.placementsRepository.find({
+          where: appIds.map((applicationId) => ({ applicationId })),
+          select: ['id', 'applicationId', 'status'],
+        })
+      : [];
+    const placementByAppId = new Map(placements.map((p) => [p.applicationId, p]));
+
     return apps.map((a) => {
       const isHunterSourced = a.source === ApplicationSource.HUNTER;
       const stageOrder = stageOrderById.get(a.pipelineStage) ?? 0;
       const contactMasked = isHunterSourced && stageOrder < revealThreshold;
+      const placement = placementByAppId.get(a.id) ?? null;
 
       return {
         id: a.id,
@@ -222,6 +237,7 @@ export class VagaApplicationsService {
               avatarUrl: a.user.avatarUrl,
             }
           : null,
+        placement: placement ? { id: placement.id, status: placement.status } : null,
       };
     });
   }

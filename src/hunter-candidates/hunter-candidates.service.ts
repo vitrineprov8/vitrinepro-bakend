@@ -15,6 +15,7 @@ import {
 } from '../vaga-applications/vaga-application.entity';
 import { Vaga, VagaStatus } from '../vagas/vaga.entity';
 import { User, HunterVerificationStatus } from '../users/user.entity';
+import { Placement } from '../placements/placement.entity';
 import { CreateHunterCandidateDto } from './dto/create-hunter-candidate.dto';
 import { UpdateHunterCandidateDto } from './dto/update-hunter-candidate.dto';
 import { SubmitCandidateDto } from './dto/submit-candidate.dto';
@@ -49,6 +50,8 @@ export class HunterCandidatesService {
     private readonly vagasRepo: Repository<Vaga>,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRepository(Placement)
+    private readonly placementsRepo: Repository<Placement>,
     private readonly mail: MailService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -331,11 +334,31 @@ export class HunterCandidatesService {
   }
 
   /** Lists all applications submitted by this hunter (dashboard T-H08). */
-  async listSubmissions(hunterId: string): Promise<VagaApplication[]> {
-    return this.applicationsRepo.find({
+  async listSubmissions(
+    hunterId: string,
+  ): Promise<(VagaApplication & { placement: { id: string; status: string } | null })[]> {
+    const apps = await this.applicationsRepo.find({
       where: { submittedByHunterId: hunterId },
       relations: ['vaga', 'hunterCandidate'],
       order: { createdAt: 'DESC' },
+    });
+
+    // Placement (B9) — para o front saber se essa submissão virou contratação
+    // e, se sim, exibir status/ações (P2 confirmar/contestar, P3 timeline).
+    const appIds = apps.map((a) => a.id);
+    const placements = appIds.length
+      ? await this.placementsRepo.find({
+          where: appIds.map((applicationId) => ({ applicationId })),
+          select: ['id', 'applicationId', 'status'],
+        })
+      : [];
+    const placementByAppId = new Map(placements.map((p) => [p.applicationId, p]));
+
+    return apps.map((a) => {
+      const placement = placementByAppId.get(a.id) ?? null;
+      return Object.assign(a, {
+        placement: placement ? { id: placement.id, status: placement.status } : null,
+      });
     });
   }
 }

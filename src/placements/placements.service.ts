@@ -194,7 +194,8 @@ export class PlacementsService {
           type: NotificationType.PLACEMENT_HIRED,
           title: 'Indicação contratada!',
           message: `Sua indicação para "${application.vaga.title}" foi marcada como contratada. Confirme o placement para liberar a garantia.`,
-          link: `/app/hunter/vagas/${application.vagaId}`,
+          // T-H09 — página real de acompanhamento de ganhos/placements do hunter.
+          link: `/app/hunter/ganhos`,
           metadata: { placementId: saved.id, vagaId: application.vagaId },
         });
       }
@@ -245,9 +246,11 @@ export class PlacementsService {
           type: NotificationType.PLACEMENT_CONFIRMED,
           title: 'Placement confirmado',
           message: `O placement de "${vaga.title}" foi confirmado${opts.autoConfirmed ? ' automaticamente' : ' pelo hunter'}. Garantia até ${(saved.guaranteeEndsAt as Date).toLocaleDateString('pt-BR')}.`,
-          // Nota: /placements/:id/timeline (P3) ainda não tem página no front (gap conhecido do B9,
-          // "timeline visual" pendente) — aponta pro workspace Empresa real em vez de gerar 404.
-          link: `/app/empresa`,
+          // A vaga pode pertencer a uma conta empresa ou a um hunter que contratou
+          // diretamente (sem passar por consultoria) — best-effort per persona;
+          // caso de vaga gerida por membro de time de consultoria continua caindo
+          // no fallback hunter (gap conhecido, ver CLAUDE.md).
+          link: company.isCompany ? `/app/empresa/vagas/${vaga.id}` : `/app/hunter/vagas/${vaga.id}`,
           metadata: { placementId: saved.id, vagaId: vaga.id },
         });
       }
@@ -292,8 +295,8 @@ export class PlacementsService {
           type: NotificationType.PLACEMENT_DISPUTED,
           title: 'Placement contestado',
           message: `O hunter contestou o placement de "${vaga.title}": ${dto.reason}`,
-          // Ver nota em applyConfirmation() — /placements/:id/timeline não existe no front ainda.
-          link: `/app/empresa`,
+          // Ver nota em applyConfirmation() sobre a heurística empresa/hunter.
+          link: company.isCompany ? `/app/empresa/vagas/${vaga.id}` : `/app/hunter/vagas/${vaga.id}`,
           metadata: { placementId: saved.id, vagaId: vaga.id },
         });
       }
@@ -392,8 +395,8 @@ export class PlacementsService {
         type: NotificationType.PLACEMENT_GUARANTEE_BROKEN,
         title: 'Garantia quebrada',
         message: `A empresa reportou saída do candidato de "${placement.vaga.title}": ${dto.reason}`,
-        // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
-        link: `/app/hunter`,
+        // T-H09 — página real de acompanhamento de ganhos/placements do hunter.
+        link: `/app/hunter/ganhos`,
         metadata: { placementId: saved.id },
       });
     }
@@ -632,8 +635,8 @@ export class PlacementsService {
             type: NotificationType.PLACEMENT_FEE_RELEASED,
             title: 'Comissão liberada',
             message: `Sua comissão de "${placement.vaga.title}" foi liberada.`,
-            // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
-            link: `/app/hunter`,
+            // T-H09 — página real de acompanhamento de ganhos/placements do hunter.
+            link: `/app/hunter/ganhos`,
             metadata: { placementId: saved.id },
           });
         }
@@ -668,8 +671,8 @@ export class PlacementsService {
             type: NotificationType.PLACEMENT_FEE_RELEASED,
             title: 'Comissão liberada',
             message: `Sua comissão de "${placement.vaga.title}" foi liberada.`,
-            // /placements/:id/timeline não existe no front ainda — manda pro dashboard do hunter.
-            link: `/app/hunter`,
+            // T-H09 — página real de acompanhamento de ganhos/placements do hunter.
+            link: `/app/hunter/ganhos`,
             metadata: { placementId: saved.id },
           });
         }
