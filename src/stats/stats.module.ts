@@ -6,6 +6,7 @@ import { Placement } from '../placements/placement.entity';
 import { VagaApplication } from '../vaga-applications/vaga-application.entity';
 import { HunterInterest } from '../hunter-interests/hunter-interest.entity';
 import { CouponRedemption } from '../coupons/coupon-redemption.entity';
+import { SavedVaga } from '../saved-vagas/saved-vaga.entity';
 import { TeamsModule } from '../teams/teams.module';
 import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
@@ -19,6 +20,7 @@ import { StatsController } from './stats.controller';
       VagaApplication,
       HunterInterest,
       CouponRedemption,
+      SavedVaga,
     ]),
     TeamsModule,
   ],

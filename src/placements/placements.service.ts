@@ -26,10 +26,13 @@ import { ContestPlacementDto } from './dto/contest-placement.dto';
 import { ReportDepartureDto } from './dto/report-departure.dto';
 import { ResolveDisputeDto, DisputeResolution } from './dto/resolve-dispute.dto';
 import { UpdatePlacementSplitDto } from './dto/update-placement-split.dto';
+import { QueryAdminPlacementsDto } from './dto/query-admin-placements.dto';
+import { AdminPlacementActionDto } from './dto/admin-placement-action.dto';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import { paginate, PaginatedResult } from '../common/paginate.helper';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -793,5 +796,160 @@ export class PlacementsService {
       platformSharePercent: saved.placementPlatformSharePercent as number,
       placementSplitHistory: saved.placementSplitHistory,
     };
+  }
+
+  /**
+   * GET /admin/placements (A4 — auditoria global) e também usado por A3
+   * (Disputas) passando `status: DISPUTED` — evita duplicar a mesma consulta
+   * com join em dois lugares. Devolve candidato/vaga/hunter/empresa
+   * resumidos, o suficiente pra tabela do admin sem expor a entidade inteira.
+   */
+  async adminListPlacements(dto: QueryAdminPlacementsDto): Promise<PaginatedResult<Record<string, unknown>>> {
+    const qb = this.placementsRepository
+      .createQueryBuilder('p')
+      .leftJoin('p.vaga', 'vaga')
+      .leftJoin('vaga.createdBy', 'company')
+      .leftJoin('p.hunter', 'hunter')
+      .leftJoin('p.application', 'application')
+      .addSelect(['vaga.id', 'vaga.title', 'vaga.slug'])
+      .addSelect(['company.id', 'company.firstName', 'company.lastName', 'company.companyName', 'company.email', 'company.isCompany'])
+      .addSelect(['hunter.id', 'hunter.firstName', 'hunter.lastName', 'hunter.email'])
+      .addSelect(['application.id', 'application.snapshotFullName'])
+      .orderBy('p.createdAt', 'DESC');
+
+    if (dto.status) qb.andWhere('p.status = :status', { status: dto.status });
+    if (dto.vagaId) qb.andWhere('p.vagaId = :vagaId', { vagaId: dto.vagaId });
+    if (dto.hunterId) qb.andWhere('p.hunterId = :hunterId', { hunterId: dto.hunterId });
+    if (dto.companyId) qb.andWhere('vaga.createdById = :companyId', { companyId: dto.companyId });
+
+    const result = await paginate(qb, dto.page, dto.limit);
+    return {
+      ...result,
+      data: result.data.map((p) => ({
+        id: p.id,
+        status: p.status,
+        finalSalary: p.finalSalary,
+        feeAmount: p.feeAmount,
+        hunterShareAmount: p.hunterShareAmount,
+        platformShareAmount: p.platformShareAmount,
+        confirmedAt: p.confirmedAt,
+        guaranteeEndsAt: p.guaranteeEndsAt,
+        feeReleasedAt: p.feeReleasedAt,
+        disputedAt: p.disputedAt,
+        disputeReason: p.disputeReason,
+        createdAt: p.createdAt,
+        candidateName: p.application?.snapshotFullName ?? null,
+        vaga: p.vaga ? { id: p.vaga.id, title: p.vaga.title, slug: p.vaga.slug } : null,
+        company: p.vaga?.createdBy
+          ? {
+              id: p.vaga.createdBy.id,
+              name: p.vaga.createdBy.isCompany
+                ? (p.vaga.createdBy.companyName ?? p.vaga.createdBy.email)
+                : `${p.vaga.createdBy.firstName ?? ''} ${p.vaga.createdBy.lastName ?? ''}`.trim(),
+              email: p.vaga.createdBy.email,
+            }
+          : null,
+        hunter: p.hunter
+          ? { id: p.hunter.id, name: `${p.hunter.firstName ?? ''} ${p.hunter.lastName ?? ''}`.trim(), email: p.hunter.email }
+          : null,
+      })),
+    };
+  }
+
+  /**
+   * POST /admin/placements/:id/force-release-fee (A4). Espelha manualmente a
+   * transição que o cron `runFeeReleaseSweep` faria — útil quando a empresa
+   * pede liberação antecipada (fora da régua de 90 dias) ou quando um caso
+   * excepcional trava o cron. Só a partir de CONFIRMED, mesmo motivo do cron.
+   */
+  async adminForceReleaseFee(
+    placementId: string,
+    adminId: string,
+    dto: AdminPlacementActionDto,
+  ): Promise<Placement> {
+    const placement = await this.loadWithVaga(placementId);
+    if (placement.status !== PlacementStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Só é possível forçar liberação de fee de um placement CONFIRMED.',
+      );
+    }
+
+    const statusBefore = placement.status;
+    placement.status = PlacementStatus.FEE_RELEASED;
+    placement.feeReleasedAt = new Date();
+    const saved = await this.placementsRepository.save(placement);
+
+    if (saved.hunterId) {
+      const hunter = await this.usersRepository.findOne({ where: { id: saved.hunterId } });
+      if (hunter && placement.vaga) {
+        void this.mailService.sendPlacementFeeReleased(
+          hunter.email,
+          hunter.firstName,
+          placement.vaga.title,
+          saved.hunterShareAmount as number,
+        );
+        void this.notificationsService.create({
+          userId: hunter.id,
+          type: NotificationType.PLACEMENT_FEE_RELEASED,
+          title: 'Comissão liberada',
+          message: `Sua comissão de "${placement.vaga.title}" foi liberada antecipadamente por um administrador.`,
+          link: `/app/hunter/ganhos`,
+          metadata: { placementId: saved.id },
+        });
+      }
+    }
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.PLACEMENT_FORCE_FEE_RELEASE,
+      targetType: 'Placement',
+      targetId: saved.id,
+      reason: dto.reason,
+      payloadBefore: { status: statusBefore },
+      payloadAfter: { status: saved.status, feeReleasedAt: saved.feeReleasedAt },
+    });
+
+    return saved;
+  }
+
+  /**
+   * POST /admin/placements/:id/force-refund (A4). "Estorno" aqui é só o
+   * registro/parada da régua do placement (CANCELLED) — não existe
+   * processamento financeiro real (sem gateway de pagamento, ver B11/B25),
+   * então nenhum valor é de fato devolvido por este endpoint. O motivo fica
+   * no audit log pra o time financeiro agir por fora, manualmente, se a
+   * empresa realmente precisar de reembolso. Documentado como gap conhecido.
+   */
+  async adminForceRefund(
+    placementId: string,
+    adminId: string,
+    dto: AdminPlacementActionDto,
+  ): Promise<Placement> {
+    const placement = await this.loadWithVaga(placementId);
+    const notRefundable: PlacementStatus[] = [
+      PlacementStatus.CANCELLED,
+      PlacementStatus.REPLACED,
+    ];
+    if (notRefundable.includes(placement.status)) {
+      throw new BadRequestException(
+        `Não é possível marcar estorno para um placement ${placement.status}.`,
+      );
+    }
+
+    const statusBefore = placement.status;
+    placement.status = PlacementStatus.CANCELLED;
+    const saved = await this.placementsRepository.save(placement);
+
+    void this.adminAuditLogService.record({
+      adminId,
+      action: AdminAuditAction.PLACEMENT_FORCE_REFUND,
+      targetType: 'Placement',
+      targetId: saved.id,
+      reason: dto.reason,
+      payloadBefore: { status: statusBefore },
+      payloadAfter: { status: saved.status },
+    });
+
+    return saved;
   }
 }

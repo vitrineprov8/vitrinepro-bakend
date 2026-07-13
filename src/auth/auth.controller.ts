@@ -74,6 +74,18 @@ export class AuthController {
     return this.authService.resendEmailVerification(req.user.id);
   }
 
+  // Conta/Dados de acesso — troca de senha autenticado (diferente do B2, que
+  // é o fluxo "esqueci minha senha" sem estar logado).
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Request() req,
+    @Body() dto: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
+  }
+
   @Get('profile')
   @UseGuards(JwtAuthGuard)
   async getProfile(@Request() req) {

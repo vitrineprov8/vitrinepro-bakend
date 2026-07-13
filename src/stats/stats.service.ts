@@ -13,6 +13,7 @@ import {
   CouponRedemption,
   RedemptionStatus,
 } from '../coupons/coupon-redemption.entity';
+import { SavedVaga } from '../saved-vagas/saved-vaga.entity';
 import { TeamContextHelper } from '../teams/team-context.helper';
 import { PLAN_PRICES_BRL } from '../plans/plan-limits';
 
@@ -47,6 +48,19 @@ export interface EmpresaDashboardStats {
   candidatosNovos7d: number;
   huntersTrabalhando: number;
   contratacoesNoAno: number;
+}
+
+/**
+ * Candidato — cards do topo de `/app/candidato` (T-C02).
+ *
+ * `visualizacoesPerfil7d` NÃO é rastreado hoje (não existe nenhuma tabela de
+ * analytics/pageview no schema — ver PLANO_DESENVOLVIMENTO.md OPS6) — vem
+ * sempre `null`, e o frontend mostra "—" em vez de inventar um número.
+ */
+export interface CandidatoDashboardStats {
+  candidaturasAtivas: number;
+  vagasSalvas: number;
+  visualizacoesPerfil7d: null;
 }
 
 export interface PipelineOverviewEntry {
@@ -118,6 +132,8 @@ export class StatsService {
     private readonly hunterInterestsRepository: Repository<HunterInterest>,
     @InjectRepository(CouponRedemption)
     private readonly couponRedemptionsRepository: Repository<CouponRedemption>,
+    @InjectRepository(SavedVaga)
+    private readonly savedVagasRepository: Repository<SavedVaga>,
     private readonly teamContextHelper: TeamContextHelper,
   ) {}
 
@@ -271,6 +287,20 @@ export class StatsService {
       huntersTrabalhando: parseInt(huntersTrabalhando?.count ?? '0', 10),
       contratacoesNoAno,
     };
+  }
+
+  // ── Candidato (T-C02) ─────────────────────────────────────────────────────
+
+  /** Cards do topo de `/app/candidato` (T-C02). */
+  async candidatoDashboard(userId: string): Promise<CandidatoDashboardStats> {
+    const [candidaturasAtivas, vagasSalvas] = await Promise.all([
+      this.vagaApplicationsRepository.count({
+        where: { userId, isRejected: false },
+      }),
+      this.savedVagasRepository.count({ where: { userId } }),
+    ]);
+
+    return { candidaturasAtivas, vagasSalvas, visualizacoesPerfil7d: null };
   }
 
   // ── Consultoria (time de hunters) ────────────────────────────────────────

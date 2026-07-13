@@ -74,6 +74,16 @@ export class HunterCandidatesService {
       );
     }
 
+    // Vincula a um User real se já existir conta com este e-mail (candidato
+    // "fantasma" que na verdade já é cadastrado na plataforma) — habilita
+    // notificação in-app + consentimento autenticado em vez de só o token
+    // por e-mail. Ver requestConsent() para o segundo ponto de vinculação
+    // (caso a conta seja criada DEPOIS de o hunter cadastrar o candidato).
+    const existingUser = await this.usersRepo.findOne({
+      where: { email },
+      select: ['id'],
+    });
+
     const candidate = this.candidatesRepo.create({
       hunterId,
       fullName: dto.fullName,
@@ -85,6 +95,7 @@ export class HunterCandidatesService {
       cvUrl: dto.cvUrl ?? null,
       notes: dto.notes ?? null,
       consentStatus: ConsentStatus.PENDING,
+      linkedUserId: existingUser?.id ?? null,
     });
     return this.candidatesRepo.save(candidate);
   }
@@ -169,6 +180,19 @@ export class HunterCandidatesService {
     if (candidate.consentStatus === ConsentStatus.GRANTED) {
       return { status: ConsentStatus.GRANTED };
     }
+
+    // Re-tenta vincular a um User real: a conta pode ter sido criada DEPOIS
+    // de o hunter ter cadastrado este candidato fantasma (create() só pega
+    // o caso "conta já existia antes"). Sem isso, `linkedUserId` fica preso
+    // em null para sempre mesmo que o candidato se cadastre a qualquer momento.
+    if (!candidate.linkedUserId) {
+      const existingUser = await this.usersRepo.findOne({
+        where: { email: candidate.email },
+        select: ['id'],
+      });
+      if (existingUser) candidate.linkedUserId = existingUser.id;
+    }
+
     const token = randomBytes(24).toString('hex');
     candidate.consentToken = token;
     candidate.consentStatus = ConsentStatus.PENDING;
@@ -187,7 +211,7 @@ export class HunterCandidatesService {
         type: NotificationType.CONSENT_REQUESTED,
         title: 'Solicitação de consentimento',
         message: `Um hunter solicitou seu consentimento para compartilhar seus dados (LGPD).`,
-        link: null,
+        link: `/app/candidato?consentId=${candidate.id}`,
         metadata: { candidateId: candidate.id },
       });
     }
@@ -218,6 +242,75 @@ export class HunterCandidatesService {
       status: candidate.consentStatus,
       candidateName: candidate.fullName,
     };
+  }
+
+  /**
+   * T-C09/N — lista as solicitações de consentimento ligadas à conta do
+   * candidato logado (via `linkedUserId`), mais recentes primeiro. Inclui
+   * pendentes e já decididas (histórico) — o front decide o que mostrar.
+   */
+  async listMyConsentRequests(userId: string): Promise<
+    Array<{
+      id: string;
+      hunterName: string;
+      fullName: string;
+      email: string;
+      phone: string | null;
+      linkedinUrl: string | null;
+      headline: string | null;
+      location: string | null;
+      status: ConsentStatus;
+      requestedAt: Date | null;
+      decidedAt: Date | null;
+    }>
+  > {
+    const rows = await this.candidatesRepo
+      .createQueryBuilder('c')
+      .leftJoin('c.hunter', 'hunter')
+      .addSelect(['hunter.id', 'hunter.firstName', 'hunter.lastName'])
+      .where('c.linkedUserId = :userId', { userId })
+      .orderBy('c.consentRequestedAt', 'DESC', 'NULLS LAST')
+      .addOrderBy('c.createdAt', 'DESC')
+      .getMany();
+
+    return rows.map((c) => ({
+      id: c.id,
+      hunterName: c.hunter ? `${c.hunter.firstName ?? ''} ${c.hunter.lastName ?? ''}`.trim() : 'Hunter',
+      fullName: c.fullName,
+      email: c.email,
+      phone: c.phone,
+      linkedinUrl: c.linkedinUrl,
+      headline: c.headline,
+      location: c.location,
+      status: c.consentStatus,
+      requestedAt: c.consentRequestedAt,
+      decidedAt: c.consentDecidedAt,
+    }));
+  }
+
+  /**
+   * T-C09/N — o próprio candidato (autenticado, dono via `linkedUserId`)
+   * autoriza/recusa o compartilhamento dos seus dados, sem precisar do
+   * token por e-mail. Mesma transição de estado do fluxo público por token.
+   */
+  async decideConsentAuthenticated(
+    id: string,
+    userId: string,
+    decision: 'GRANTED' | 'DECLINED',
+  ): Promise<{ status: ConsentStatus }> {
+    const candidate = await this.candidatesRepo.findOne({ where: { id } });
+    if (!candidate || candidate.linkedUserId !== userId) {
+      throw new NotFoundException('Solicitação de consentimento não encontrada.');
+    }
+    if (candidate.consentStatus !== ConsentStatus.PENDING) {
+      throw new BadRequestException('Esta solicitação já foi respondida.');
+    }
+    candidate.consentStatus =
+      decision === 'GRANTED' ? ConsentStatus.GRANTED : ConsentStatus.DECLINED;
+    candidate.consentDecidedAt = new Date();
+    candidate.consentToken = null;
+    await this.candidatesRepo.save(candidate);
+    return { status: candidate.consentStatus };
   }
 
   // ── Submissão a uma vaga ────────────────────────────────────────────────────

@@ -62,8 +62,9 @@ export class SavedVagasService {
       .createQueryBuilder('sv')
       .innerJoinAndSelect('sv.vaga', 'vaga')
       .where('sv.userId = :userId', { userId })
-      // Only surface vagas that are still published — don't expose closed ones in bookmarks list
-      .andWhere('vaga.status = :status', { status: VagaStatus.PUBLISHED })
+      // T-C05 — inclui vagas fechadas/despublicadas: o frontend usa isso para a
+      // aba "Encerradas" (cards acinzentados, ação única: remover). Antes este
+      // filtro escondia essas vagas por completo da lista de salvos.
       .orderBy('sv.createdAt', 'DESC');
 
     return paginate(qb, page, limit);

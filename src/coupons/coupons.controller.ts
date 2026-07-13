@@ -1,8 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -12,6 +15,8 @@ import { Roles } from '../auth/roles.decorator';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { UserRole } from '../users/user.entity';
 import { CouponsService } from './coupons.service';
+import { CreateCouponCampaignDto } from './dto/create-coupon-campaign.dto';
+import { UpdateCouponCampaignDto } from './dto/update-coupon-campaign.dto';
 
 @Controller()
 export class CouponsController {
@@ -22,6 +27,13 @@ export class CouponsController {
   @UseGuards(JwtAuthGuard)
   getMyCoupon(@Request() req: { user: { id: string } }) {
     return this.couponsService.getOrCreateForUser(req.user.id);
+  }
+
+  /** Conta/Indicações (M4) — lista as redenções do próprio cupom do usuário. */
+  @Get('me/coupon/redemptions')
+  @UseGuards(JwtAuthGuard)
+  getMyRedemptions(@Request() req: { user: { id: string } }) {
+    return this.couponsService.listMyRedemptions(req.user.id);
   }
 
   /**
@@ -76,5 +88,48 @@ export class CouponsController {
     @Request() req: { user: { id: string } },
   ) {
     return this.couponsService.rejectRedemption(id, req.user.id);
+  }
+
+  // A5 — Cupons de campanha (CRUD admin, tab 2 de /app/admin/cupons).
+
+  @Get('admin/coupons/campaigns')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  listCampaigns(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.couponsService.listCampaigns(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Post('admin/coupons/campaigns')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  createCampaign(
+    @Body() dto: CreateCouponCampaignDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.couponsService.createCampaign(dto, req.user.id);
+  }
+
+  @Patch('admin/coupons/campaigns/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  updateCampaign(
+    @Param('id') id: string,
+    @Body() dto: UpdateCouponCampaignDto,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.couponsService.updateCampaign(id, dto, req.user.id);
+  }
+
+  @Post('admin/coupons/campaigns/:id/toggle')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  toggleCampaign(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.couponsService.toggleCampaign(id, req.user.id);
   }
 }

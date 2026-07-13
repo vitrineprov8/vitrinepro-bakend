@@ -20,6 +20,8 @@ import { ContestPlacementDto } from './dto/contest-placement.dto';
 import { ReportDepartureDto } from './dto/report-departure.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { UpdatePlacementSplitDto } from './dto/update-placement-split.dto';
+import { QueryAdminPlacementsDto } from './dto/query-admin-placements.dto';
+import { AdminPlacementActionDto } from './dto/admin-placement-action.dto';
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -134,5 +136,38 @@ export class PlacementsController {
     @Body() dto: UpdatePlacementSplitDto,
   ) {
     return this.placementsService.adminUpdatePlacementSplit(id, req.user.id, dto);
+  }
+
+  /**
+   * GET /admin/placements (A4 — auditoria global). Também reusado pela tela
+   * A3 (Disputas) passando `?status=DISPUTED` — mesma listagem, um filtro.
+   */
+  @Get('admin/placements')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  adminListPlacements(@Query() query: QueryAdminPlacementsDto) {
+    return this.placementsService.adminListPlacements(query);
+  }
+
+  @Post('admin/placements/:id/force-release-fee')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  adminForceReleaseFee(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+    @Body() dto: AdminPlacementActionDto,
+  ) {
+    return this.placementsService.adminForceReleaseFee(id, req.user.id, dto);
+  }
+
+  @Post('admin/placements/:id/force-refund')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  adminForceRefund(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+    @Body() dto: AdminPlacementActionDto,
+  ) {
+    return this.placementsService.adminForceRefund(id, req.user.id, dto);
   }
 }

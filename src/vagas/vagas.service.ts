@@ -294,12 +294,26 @@ export class VagasService {
     return this.attachApplicationsCount(result);
   }
 
-  /** Admin-only: lists all vagas in the system */
+  /**
+   * Admin-only: lists all vagas in the system (A6 do painel admin).
+   * `leftJoinAndSelect('vaga.createdBy', ...)` com `addSelect` restrito evita
+   * devolver o `createdBy` inteiro (password/tokens) — só os campos que a
+   * tabela do admin precisa pra identificar o dono sem expor um UUID cru.
+   */
   async listAdmin(dto: ListVagasDto) {
     const { page = 1, limit = 10, q, status, type, workMode } = dto;
 
     const qb = this.vagasRepository
       .createQueryBuilder('vaga')
+      .leftJoin('vaga.createdBy', 'owner')
+      .addSelect([
+        'owner.id',
+        'owner.firstName',
+        'owner.lastName',
+        'owner.email',
+        'owner.companyName',
+        'owner.isCompany',
+      ])
       .orderBy('vaga.createdAt', 'DESC');
 
     if (status) qb.andWhere('vaga.status = :status', { status });

@@ -283,6 +283,47 @@ export class AuthService {
     return { message: 'Senha redefinida com sucesso.' };
   }
 
+  /**
+   * Conta/T-C-transversal — troca de senha estando autenticado (Dados de
+   * acesso). Diferente do fluxo B2 (esqueci minha senha, sem estar logado):
+   * aqui exige a senha ATUAL, sem token de e-mail nenhum. Contas OAuth (sem
+   * `password`) não podem usar este fluxo — mesma restrição do B2.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('A nova senha precisa ter pelo menos 8 caracteres.');
+    }
+
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+
+    if (!user.password) {
+      throw new BadRequestException(
+        'Esta conta usa login social (Google/LinkedIn) e não tem senha para trocar.',
+      );
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      // Importante: NÃO usar 401 aqui. O interceptor global do front
+      // (`useApi.ts`) trata qualquer 401 como "sessão expirada" — desloga o
+      // usuário e redireciona pro /login. Sendo um usuário JÁ autenticado
+      // digitando a senha atual errada por engano, um 401 aqui derrubaria a
+      // sessão dele no meio do fluxo. 400 é o status certo (erro de
+      // validação do payload, não de autenticação da requisição em si).
+      throw new BadRequestException('Senha atual incorreta.');
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await this.usersRepository.save(user);
+
+    return { message: 'Senha alterada com sucesso.' };
+  }
+
   // ===== B17 — VERIFICAÇÃO DE E-MAIL =====
 
   /** Gera, salva e retorna um token de verificação de e-mail (24h). */

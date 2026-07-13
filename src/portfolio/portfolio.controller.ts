@@ -26,8 +26,9 @@ export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
 
   @Get()
-  findAll(@Query() query: ListPortfolioDto) {
-    return this.portfolioService.findAll(query);
+  @UseGuards(OptionalJwtAuthGuard)
+  findAll(@Query() query: ListPortfolioDto, @Request() req) {
+    return this.portfolioService.findAll(query, req.user?.id);
   }
 
   @Get(':slug')

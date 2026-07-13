@@ -42,6 +42,21 @@ export class Coupon {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+  // A5 — Cupons de campanha (painel admin): validade + limite de usos.
+  // Cupons de referral (ownerId != null) simplesmente deixam esses campos
+  // null (sem restrição de data/limite), mesmo comportamento de antes.
+  @Column({ type: 'timestamp', nullable: true })
+  validFrom: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  validUntil: Date | null;
+
+  @Column({ type: 'int', nullable: true })
+  usageLimit: number | null;
+
+  @Column({ type: 'int', default: 0 })
+  usageCount: number;
+
   @CreateDateColumn()
   createdAt: Date;
 }

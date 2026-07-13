@@ -127,19 +127,46 @@ export class VagaApplicationsService {
     return this.applicationsRepository.save(application);
   }
 
+  /**
+   * T-C04 — Minhas Candidaturas (candidato). Além dos campos básicos, inclui
+   * o snapshot congelado (dados enviados no momento da candidatura — não
+   * mudam com o perfil atual, ver RN da spec 02), o CV enviado (se houver) e
+   * a empresa dona da vaga. `stageHistory` é devolvido **sem** `note`/
+   * `byUserId` (notas internas do recrutador não são visíveis ao candidato,
+   * só a etapa e quando ela mudou) — mesma régua de "sem notas internas" já
+   * aplicada em `getHistory()` para outros atores.
+   */
   async listMine(userId: string): Promise<unknown[]> {
-    const apps = await this.applicationsRepository.find({
-      where: { userId },
-      relations: ['vaga'],
-      order: { createdAt: 'DESC' },
-    });
+    // createQueryBuilder + addSelect restrito (não `relations: ['vaga.createdBy']`
+    // simples) — `find()` com relations aninhadas traria o User dono da vaga
+    // inteiro, incl. hash de senha (mesma classe de bug já corrigida em
+    // B19/F7/B24/A5, ver CLAUDE.md).
+    const apps = await this.applicationsRepository
+      .createQueryBuilder('a')
+      .where('a.userId = :userId', { userId })
+      .leftJoinAndSelect('a.vaga', 'vaga')
+      .leftJoinAndSelect('a.cv', 'cv')
+      .leftJoin('vaga.createdBy', 'owner')
+      .addSelect(['owner.id', 'owner.firstName', 'owner.lastName', 'owner.companyName', 'owner.isCompany', 'owner.username'])
+      .orderBy('a.createdAt', 'DESC')
+      .getMany();
 
     return apps.map((a) => ({
       id: a.id,
       pipelineStage: a.pipelineStage,
       isRejected: a.isRejected,
       message: a.message,
+      snapshotFullName: a.snapshotFullName,
+      snapshotEmail: a.snapshotEmail,
+      snapshotPhone: a.snapshotPhone,
+      snapshotLocation: a.snapshotLocation,
       createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+      cv: a.cv ? { id: a.cv.id, label: a.cv.label, fileUrl: a.cv.fileUrl } : null,
+      stageHistory: (a.stageHistory ?? []).map((h) => ({
+        stage: h.stage,
+        enteredAt: h.enteredAt,
+      })),
       vaga: a.vaga
         ? {
             id: a.vaga.id,
@@ -149,6 +176,15 @@ export class VagaApplicationsService {
             location: a.vaga.location,
             type: a.vaga.type,
             workMode: a.vaga.workMode,
+            deadline: a.vaga.deadline,
+            company: a.vaga.createdBy
+              ? {
+                  name: a.vaga.createdBy.isCompany
+                    ? a.vaga.createdBy.companyName
+                    : `${a.vaga.createdBy.firstName ?? ''} ${a.vaga.createdBy.lastName ?? ''}`.trim(),
+                  username: a.vaga.createdBy.username,
+                }
+              : null,
           }
         : null,
     }));

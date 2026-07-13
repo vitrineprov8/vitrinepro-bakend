@@ -33,8 +33,17 @@ export class PortfolioService {
     private dataSource: DataSource,
   ) {}
 
-  async findAll(dto: ListPortfolioDto) {
+  async findAll(dto: ListPortfolioDto, requesterId?: string) {
     const { page = 1, limit = 10, tag, userId, status } = dto;
+
+    // T-C07 — este endpoint é público (OptionalJwtAuthGuard, sem auth
+    // obrigatória). Antes, `status=DRAFT&userId=<qualquer-id>` vazava itens
+    // não publicados de QUALQUER usuário para QUALQUER visitante (nenhuma
+    // verificação de dono). `isOwnerQuery` restringe a visão de status
+    // não-PUBLISHED a quando o requisitante autenticado é o próprio dono —
+    // é também o que permite ao candidato listar seu próprio portfólio
+        // completo (rascunhos + publicados) via GET /portfolio?userId=<próprio id>.
+    const isOwnerQuery = !!userId && !!requesterId && userId === requesterId;
 
     const qb = this.portfolioRepository
       .createQueryBuilder('item')
@@ -44,10 +53,14 @@ export class PortfolioService {
       .orderBy('item.createdAt', 'DESC');
 
     if (status) {
+      if (status !== PortfolioStatus.PUBLISHED && !isOwnerQuery) {
+        throw new ForbiddenException('Não é possível listar itens não publicados de outro usuário.');
+      }
       qb.andWhere('item.status = :status', { status });
-    } else {
+    } else if (!isOwnerQuery) {
       qb.andWhere('item.status = :status', { status: PortfolioStatus.PUBLISHED });
     }
+    // else: isOwnerQuery && sem status explícito → devolve todos os status (lista própria completa).
 
     if (tag) {
       qb.andWhere('tag.slug = :tag', { tag });

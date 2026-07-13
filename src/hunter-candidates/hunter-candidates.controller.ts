@@ -87,6 +87,24 @@ export class HunterCandidatesController {
     return this.service.decideConsentByToken(token, dto.decision);
   }
 
+  // ── T-C09/N — consentimento autenticado (candidato com conta) ──────────────
+
+  @Get('me/consent-requests')
+  @UseGuards(JwtAuthGuard)
+  listMyConsentRequests(@Request() req: Req) {
+    return this.service.listMyConsentRequests(req.user.id);
+  }
+
+  @Post('me/consent-requests/:id/decide')
+  @UseGuards(JwtAuthGuard)
+  decideConsentAuthenticated(
+    @Request() req: Req,
+    @Param('id') id: string,
+    @Body() dto: DecideConsentDto,
+  ) {
+    return this.service.decideConsentAuthenticated(id, req.user.id, dto.decision);
+  }
+
   // ── Submissão a uma vaga ────────────────────────────────────────────────────
 
   @Post('vagas/:id/submissions')

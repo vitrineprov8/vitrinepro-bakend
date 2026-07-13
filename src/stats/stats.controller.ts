@@ -36,6 +36,13 @@ export class StatsController {
     return this.statsService.empresaDashboard(req.user.id);
   }
 
+  /** Cards do topo de `/app/candidato` (T-C02). */
+  @Get('stats/candidato')
+  @UseGuards(JwtAuthGuard)
+  candidatoDashboard(@Request() req: { user: { id: string } }) {
+    return this.statsService.candidatoDashboard(req.user.id);
+  }
+
   /** B12 — KPIs + pipeline overview + feed de atividade do time (§04). Requer time (TEAM/ENTERPRISE). */
   @Get('stats/consultoria')
   @UseGuards(JwtAuthGuard)
