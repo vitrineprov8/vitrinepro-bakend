@@ -162,7 +162,7 @@ export class User {
   @Column({ type: 'varchar', length: 500, nullable: true })
   companyLogoUrl: string | null;
 
-  // ── B22 — split de placement negociável por empresa ─────────────────────────
+  // B22 - split de placement negociavel por empresa
   @Column({ type: 'int', nullable: true })
   placementPlatformSharePercent: number | null;
 
@@ -204,6 +204,21 @@ export class User {
 
   @Column({ type: 'text', nullable: true })
   verificationRejectionReason: string | null;
+
+  // B11 - gateway de pagamento Asaas
+  /** ID do customer criado na Asaas (cacheado - evita recriar a cada checkout). */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  asaasCustomerId: string | null;
+
+  /** CPF/CNPJ informado no ultimo checkout - a Asaas exige pra criar cobranca. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  cpfCnpj: string | null;
+
+  @Column({ type: 'varchar', length: 9, nullable: true })
+  billingPostalCode: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  billingAddressNumber: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -17,6 +17,12 @@ export enum SubscriptionStatus {
   EXPIRED = 'EXPIRED',
 }
 
+export enum AsaasBillingType {
+  PIX = 'PIX',
+  BOLETO = 'BOLETO',
+  CREDIT_CARD = 'CREDIT_CARD',
+}
+
 @Entity('subscriptions')
 export class Subscription {
   @PrimaryGeneratedColumn('uuid')
@@ -53,6 +59,22 @@ export class Subscription {
 
   @Column({ type: 'timestamp', nullable: true })
   endsAt: Date | null;
+
+  // ── B11 — gateway de pagamento Asaas ─────────────────────────────────────
+  @Column({ type: 'enum', enum: AsaasBillingType, nullable: true })
+  billingType: AsaasBillingType | null;
+
+  /** ID da cobrança (`payment`) criada na Asaas — chave de correlação do webhook. */
+  @Index()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  asaasPaymentId: string | null;
+
+  /** URL da fatura Asaas (boleto/PDF ou página hospedada). */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  invoiceUrl: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  dueDate: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;
