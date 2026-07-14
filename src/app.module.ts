@@ -40,6 +40,7 @@ import { AdminAuditLogModule } from './admin-audit-log/admin-audit-log.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PayoutsModule } from './payouts/payouts.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AdminUsersModule,
     ReviewsModule,
     NotificationsModule,
+    PayoutsModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],

@@ -60,4 +60,7 @@ export const NOTIFICATION_DEFAULT_CHANNELS: Record<
   [NotificationType.PLACEMENT_FEE_RELEASED]: { inApp: true, email: true },
   [NotificationType.TEAM_INVITE]: { inApp: true, email: true },
   [NotificationType.VERIFICATION_DECIDED]: { inApp: true, email: true },
+  [NotificationType.PAYOUT_PAID]: { inApp: true, email: true },
+  [NotificationType.PAYOUT_REJECTED]: { inApp: true, email: true },
+  [NotificationType.PAYOUT_FAILED]: { inApp: true, email: true },
 };

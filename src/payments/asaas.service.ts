@@ -46,6 +46,24 @@ export interface AsaasPayment {
   value?: number;
 }
 
+export interface AsaasCreateTransferInput {
+  value: number;
+  pixAddressKey: string;
+  /** CPF | CNPJ | EMAIL | PHONE | EVP (chave aleatória). */
+  pixAddressKeyType: string;
+  description?: string;
+}
+
+export interface AsaasTransfer {
+  id: string;
+  /** PENDING | BANK_PROCESSING | DONE | CANCELLED | FAILED (ver docs.asaas.com/docs/webhook-para-transferencias). */
+  status: string;
+  value?: number;
+  transferFee?: number;
+  effectiveDate?: string;
+  failReason?: string;
+}
+
 /**
  * Integração com o gateway de pagamento Asaas (B11).
  * Docs: https://docs.asaas.com — auth via header `access_token` (não Bearer),
@@ -131,6 +149,23 @@ export class AsaasService {
     expirationDate: string;
   }> {
     return this.request('GET', `/payments/${paymentId}/pixQrCode`);
+  }
+
+  /**
+   * B25 — transferência via Pix a partir do saldo disponível na conta Asaas
+   * (`POST /v3/transfers`). Usada pra pagar a comissão do hunter, sempre
+   * DEPOIS de um admin aprovar manualmente (ver PayoutsService.approve()) —
+   * o sistema executa automaticamente, mas nunca sem essa validação prévia.
+   * Docs: https://docs.asaas.com/docs/transferencia-para-contas-de-outra-instituicao-pix-ted
+   */
+  async createPixTransfer(input: AsaasCreateTransferInput): Promise<AsaasTransfer> {
+    return this.request<AsaasTransfer>('POST', '/transfers', {
+      value: input.value,
+      pixAddressKey: input.pixAddressKey,
+      pixAddressKeyType: input.pixAddressKeyType,
+      scheduleDate: null,
+      description: input.description ?? 'Comissão de indicação — VitrinePro',
+    });
   }
 
   /** Compara o header `asaas-access-token` do webhook com o token configurado no painel Asaas. */

@@ -26,6 +26,7 @@ import { AdminAuditLog } from '../admin-audit-log/admin-audit-log.entity';
 import { HunterReview } from '../reviews/hunter-review.entity';
 import { Notification } from '../notifications/notification.entity';
 import { NotificationPreference } from '../notifications/notification-preference.entity';
+import { Payout } from '../payouts/payout.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -61,6 +62,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     HunterReview,
     Notification,
     NotificationPreference,
+    Payout,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

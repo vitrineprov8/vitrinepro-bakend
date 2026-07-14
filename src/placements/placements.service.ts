@@ -33,6 +33,7 @@ import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
+import { PayoutsService } from '../payouts/payouts.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -53,7 +54,25 @@ export class PlacementsService {
     private mailService: MailService,
     private adminAuditLogService: AdminAuditLogService,
     private notificationsService: NotificationsService,
+    private payoutsService: PayoutsService,
   ) {}
+
+  /**
+   * B25 — cria o registro de pagamento (payout) assim que o fee é liberado.
+   * Fire-and-forget-com-log (não `void`/silencioso): se falhar, a transição
+   * de status do placement já foi salva e não deve ser desfeita — mas o erro
+   * precisa ficar visível pro time reconciliar manualmente (payout ausente
+   * pra um placement FEE_RELEASED é um problema financeiro, não cosmético).
+   */
+  private async createPayoutSafely(placement: Placement, hunter: User): Promise<void> {
+    try {
+      await this.payoutsService.createForPlacement(placement, hunter);
+    } catch (err) {
+      this.logger.error(
+        `Falha ao criar payout para o placement ${placement.id} (hunter ${hunter.id}): ${(err as Error).message}`,
+      );
+    }
+  }
 
   private async assertCanManageVaga(
     vagaCreatedById: string | null,
@@ -626,6 +645,12 @@ export class PlacementsService {
 
       if (saved.hunterId) {
         const hunter = await this.usersRepository.findOne({ where: { id: saved.hunterId } });
+        if (hunter) {
+          // B25 — cria o payout ANTES do e-mail/notificação (o hunter já é
+          // avisado da liberação da comissão; o payout fica PENDING_REVIEW
+          // aguardando validação do admin).
+          await this.createPayoutSafely(saved, hunter);
+        }
         if (hunter && placement.vaga) {
           void this.mailService.sendPlacementFeeReleased(
             hunter.email,
@@ -662,6 +687,9 @@ export class PlacementsService {
 
       if (saved.hunterId) {
         const hunter = await this.usersRepository.findOne({ where: { id: saved.hunterId } });
+        if (hunter) {
+          await this.createPayoutSafely(saved, hunter);
+        }
         if (hunter && placement.vaga) {
           void this.mailService.sendPlacementFeeReleased(
             hunter.email,
@@ -881,6 +909,9 @@ export class PlacementsService {
 
     if (saved.hunterId) {
       const hunter = await this.usersRepository.findOne({ where: { id: saved.hunterId } });
+      if (hunter) {
+        await this.createPayoutSafely(saved, hunter);
+      }
       if (hunter && placement.vaga) {
         void this.mailService.sendPlacementFeeReleased(
           hunter.email,

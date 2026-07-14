@@ -39,6 +39,9 @@ export enum AdminAuditAction {
   COUPON_CAMPAIGN_CREATE = 'COUPON_CAMPAIGN_CREATE',
   COUPON_CAMPAIGN_UPDATE = 'COUPON_CAMPAIGN_UPDATE',
   COUPON_CAMPAIGN_TOGGLE = 'COUPON_CAMPAIGN_TOGGLE',
+  // B25 — revisão/execução de pagamento da comissão do hunter
+  PAYOUT_APPROVE = 'PAYOUT_APPROVE',
+  PAYOUT_REJECT = 'PAYOUT_REJECT',
 }
 
 @Entity('admin_audit_logs')

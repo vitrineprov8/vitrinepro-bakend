@@ -220,6 +220,25 @@ export class User {
   @Column({ type: 'varchar', length: 20, nullable: true })
   billingAddressNumber: string | null;
 
+  // B25 - dados de recebimento do hunter (payout do fee via Asaas Transfers)
+  /** Chave Pix usada para receber a comissão (T-H09 "Configurar recebimento"). */
+  @Column({ type: 'varchar', length: 140, nullable: true })
+  payoutPixKey: string | null;
+
+  /** CPF | CNPJ | EMAIL | PHONE | EVP — ver PixKeyType em payouts/payout.entity.ts. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  payoutPixKeyType: string | null;
+
+  /** PF | PJ | MEI — determina se precisa de nota fiscal por pagamento. */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  payoutLegalType: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  payoutCpfCnpj: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  payoutConfiguredAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
