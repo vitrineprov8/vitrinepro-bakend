@@ -13,6 +13,7 @@ import { UpdateUserPlanDto } from './dto/update-user-plan.dto';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { AdminAuditAction } from '../admin-audit-log/admin-audit-log.entity';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
+import { UsersService } from '../users/users.service';
 
 /** Campos públicos/seguros de um usuário no painel admin (B24 — A6). Nunca inclui password/tokens. */
 const ADMIN_USER_LIST_FIELDS = [
@@ -41,6 +42,7 @@ export class AdminUsersService {
     private usersRepository: Repository<User>,
     private adminAuditLogService: AdminAuditLogService,
     private jwtService: JwtService,
+    private usersService: UsersService,
   ) {}
 
   /** GET /admin/users — busca por nome/e-mail/persona/plano, paginado. */
@@ -217,32 +219,7 @@ export class AdminUsersService {
       throw new ForbiddenException('Não é permitido anonimizar outra conta administradora.');
     }
 
-    const stamp = Date.now();
-    user.email = `anonimizado-${stamp}@removido.vitrinepro.com`;
-    user.firstName = 'Usuário';
-    user.lastName = 'Removido';
-    user.password = null;
-    user.authProvider = null;
-    user.oauthId = null;
-    user.avatarUrl = null;
-    user.avatarKey = null;
-    user.bannerUrl = null;
-    user.bannerKey = null;
-    user.username = null;
-    user.profession = null;
-    user.bio = null;
-    user.phone = null;
-    user.website = null;
-    user.location = null;
-    user.socialLinks = null;
-    user.isActive = false;
-    user.isVisible = false;
-    user.passwordResetToken = null;
-    user.passwordResetExpiresAt = null;
-    user.emailVerificationToken = null;
-    user.emailVerificationExpiresAt = null;
-    user.verificationDocs = null;
-    user.verificationLinkedinUrl = null;
+    this.usersService.applyAnonymization(user);
 
     const saved = await this.usersRepository.save(user);
 

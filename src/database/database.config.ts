@@ -28,6 +28,7 @@ import { Notification } from '../notifications/notification.entity';
 import { NotificationPreference } from '../notifications/notification-preference.entity';
 import { Payout } from '../payouts/payout.entity';
 import { Invoice } from '../invoices/invoice.entity';
+import { UserSession } from '../auth/user-session.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -65,6 +66,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     NotificationPreference,
     Payout,
     Invoice,
+    UserSession,
   ],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',

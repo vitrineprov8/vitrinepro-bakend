@@ -10,13 +10,14 @@ import { LinkedInStrategy } from './linkedin.strategy';
 import { UsersModule } from '../users/users.module';
 import { TagsModule } from '../tags/tags.module';
 import { User } from '../users/user.entity';
+import { UserSession } from './user-session.entity';
 
 @Module({
   imports: [
     UsersModule,
     TagsModule,
     PassportModule,
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, UserSession]),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key',
       signOptions: { expiresIn: '24h' },

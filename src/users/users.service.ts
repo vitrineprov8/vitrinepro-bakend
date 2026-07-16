@@ -65,6 +65,48 @@ export class UsersService {
     await this.usersRepository.delete(id);
   }
 
+  /**
+   * Anonimização LGPD — campos de PII sobrescritos com valores aleatórios,
+   * conta desativada. NÃO salva sozinho (deixa o caller decidir quando, pra
+   * poder empacotar em audit log/notificação na mesma transação lógica).
+   * Compartilhado entre `AdminUsersService.anonymize` (B24, admin exclui
+   * conta de terceiro) e `AccountService.deleteAccount` (B26, titular exclui
+   * a própria conta) — mesmo efeito, gatilhos diferentes.
+   *
+   * Não é hard-delete: várias tabelas referenciam `userId` por FK (vagas,
+   * placements, applications, invoices etc.) — apagar de verdade quebraria
+   * histórico/auditoria de terceiros que não pediram nada.
+   */
+  applyAnonymization(user: User): User {
+    const stamp = Date.now();
+    user.email = `anonimizado-${stamp}@removido.vitrinepro.com`;
+    user.firstName = 'Usuário';
+    user.lastName = 'Removido';
+    user.password = null;
+    user.authProvider = null;
+    user.oauthId = null;
+    user.avatarUrl = null;
+    user.avatarKey = null;
+    user.bannerUrl = null;
+    user.bannerKey = null;
+    user.username = null;
+    user.profession = null;
+    user.bio = null;
+    user.phone = null;
+    user.website = null;
+    user.location = null;
+    user.socialLinks = null;
+    user.isActive = false;
+    user.isVisible = false;
+    user.passwordResetToken = null;
+    user.passwordResetExpiresAt = null;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpiresAt = null;
+    user.verificationDocs = null;
+    user.verificationLinkedinUrl = null;
+    return user;
+  }
+
   private async generateUniqueUsername(
     firstName: string,
     lastName: string,

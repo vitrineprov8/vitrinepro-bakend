@@ -1,7 +1,7 @@
 import { Controller, Post, Body, UseGuards, Get, Request, HttpCode, HttpStatus, Res, Req, Param } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Response } from 'express';
-import { AuthService } from './auth.service';
+import type { Request as ExpressRequest, Response } from 'express';
+import { AuthService, DeviceInfo } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleAuthGuard } from './google-auth.guard';
 import { LinkedInAuthGuard } from './linkedin-auth.guard';
@@ -10,6 +10,14 @@ import { LinkedInAuthGuard } from './linkedin-auth.guard';
 // (login, registro, forgot-password): 5 tentativas por minuto por IP,
 // bem abaixo do limite 'default' global de 100/min do ThrottlerModule.
 const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+
+/** B26 — extrai UA/IP da requisição pra gravar em `user_sessions`. */
+function deviceInfoFrom(req: ExpressRequest): DeviceInfo {
+  return {
+    userAgent: req.headers['user-agent'] ?? null,
+    ip: (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip || null,
+  };
+}
 
 @Controller('auth')
 export class AuthController {
@@ -30,8 +38,9 @@ export class AuthController {
       companyIndustry?: string;
       persona?: 'CANDIDATO' | 'HUNTER';
     },
+    @Req() req: ExpressRequest,
   ) {
-    return this.authService.register(registerDto);
+    return this.authService.register(registerDto, deviceInfoFrom(req));
   }
 
   @Post('login')
@@ -39,8 +48,9 @@ export class AuthController {
   @Throttle(AUTH_THROTTLE)
   async login(
     @Body() loginDto: { email: string; password: string },
+    @Req() req: ExpressRequest,
   ) {
-    return this.authService.login(loginDto);
+    return this.authService.login(loginDto, deviceInfoFrom(req));
   }
 
   // ===== B2 — RESET DE SENHA =====
@@ -109,8 +119,8 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  async googleAuthCallback(@Req() req, @Res() res: Response) {
-    const token = this.authService.generateToken(req.user);
+  async googleAuthCallback(@Req() req: ExpressRequest, @Res() res: Response) {
+    const token = await this.authService.createSession((req as any).user, deviceInfoFrom(req));
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4321';
     res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
   }
@@ -124,8 +134,8 @@ export class AuthController {
 
   @Get('linkedin/callback')
   @UseGuards(LinkedInAuthGuard)
-  async linkedinAuthCallback(@Req() req, @Res() res: Response) {
-    const token = this.authService.generateToken(req.user);
+  async linkedinAuthCallback(@Req() req: ExpressRequest, @Res() res: Response) {
+    const token = await this.authService.createSession((req as any).user, deviceInfoFrom(req));
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
   }

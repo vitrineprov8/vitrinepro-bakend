@@ -44,6 +44,10 @@ export enum AdminAuditAction {
   PAYOUT_REJECT = 'PAYOUT_REJECT',
   // Faturas de fee — resolução de disputa de fatura (T-E07)
   INVOICE_RESOLVE_DISPUTE = 'INVOICE_RESOLVE_DISPUTE',
+  // B26 — titular exclui a própria conta (self-service, LGPD). `adminId` do
+  // log recebe o próprio userId (é o "ator" aqui, não um admin de verdade) —
+  // mantém o mesmo trilho de auditoria sem exigir uma coluna nova.
+  USER_SELF_ANONYMIZE = 'USER_SELF_ANONYMIZE',
 }
 
 @Entity('admin_audit_logs')

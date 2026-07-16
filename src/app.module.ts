@@ -42,6 +42,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { AccountModule } from './account/account.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { InvoicesModule } from './invoices/invoices.module';
     NotificationsModule,
     PayoutsModule,
     InvoicesModule,
+    AccountModule,
     ...(process.env.NODE_ENV !== 'production' ? [SeedModule] : []),
   ],
   controllers: [AppController],

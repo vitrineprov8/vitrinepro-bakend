@@ -11,9 +11,16 @@ import { randomBytes } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { TagsService } from '../tags/tags.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { User, UserPersona } from '../users/user.entity';
 import { MailService } from '../mail/mail.service';
+import { UserSession } from './user-session.entity';
+
+/** Dados mínimos do dispositivo, extraídos da requisição pelo controller (B26 — sessões ativas). */
+export interface DeviceInfo {
+  userAgent?: string | null;
+  ip?: string | null;
+}
 
 /** B2 — token expira 1h após a solicitação. */
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -30,6 +37,8 @@ export class AuthService {
     private mailService: MailService,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(UserSession)
+    private userSessionsRepository: Repository<UserSession>,
   ) {}
 
   async register(registerDto: {
@@ -42,7 +51,7 @@ export class AuthService {
     companyIndustry?: string;
     /** B1 — persona escolhida em /cadastro (T13). Ignorado quando isCompany=true. */
     persona?: 'CANDIDATO' | 'HUNTER';
-  }) {
+  }, device?: DeviceInfo) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new BadRequestException('El email ya está registrado');
@@ -88,7 +97,7 @@ export class AuthService {
       verificationToken,
     );
 
-    const token = this.generateToken(user);
+    const token = await this.createSession(user, device);
 
     return {
       message: 'Usuario registrado exitosamente',
@@ -109,7 +118,7 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: { email: string; password: string }) {
+  async login(loginDto: { email: string; password: string }, device?: DeviceInfo) {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Email o contraseña incorrectos');
@@ -132,7 +141,7 @@ export class AuthService {
       throw new UnauthorizedException('Email o contraseña incorrectos');
     }
 
-    const token = this.generateToken(user);
+    const token = await this.createSession(user, device);
 
     return {
       message: 'Login exitoso',
@@ -396,13 +405,44 @@ export class AuthService {
     };
   }
 
-  public generateToken(user: User) {
+  /**
+   * B26 — cria uma linha em `user_sessions` (1 por login) e assina o JWT com
+   * `jti` = id dessa sessão. Substitui o antigo `generateToken` síncrono —
+   * agora precisa gravar no banco antes de assinar, por isso é async.
+   */
+  public async createSession(user: User, device?: DeviceInfo): Promise<string> {
+    const session = await this.userSessionsRepository.save(
+      this.userSessionsRepository.create({
+        userId: user.id,
+        userAgent: device?.userAgent?.slice(0, 500) ?? null,
+        ip: device?.ip ?? null,
+        lastSeenAt: new Date(),
+      }),
+    );
+
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
+      jti: session.id,
     };
     return this.jwtService.sign(payload);
+  }
+
+  /**
+   * B26 — chamado pelo `JwtStrategy` a cada requisição autenticada. Retorna
+   * `null` se a sessão não existe ou foi revogada (força 401). Atualiza
+   * `lastSeenAt` como efeito colateral (não bloqueia — engole erro de update).
+   */
+  async touchSession(sessionId: string, userId: string): Promise<UserSession | null> {
+    const session = await this.userSessionsRepository.findOne({
+      where: { id: sessionId, userId, revokedAt: IsNull() },
+    });
+    if (!session) return null;
+
+    session.lastSeenAt = new Date();
+    void this.userSessionsRepository.save(session).catch(() => undefined);
+    return session;
   }
 
   /**

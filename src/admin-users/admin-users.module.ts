@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { User } from '../users/user.entity';
 import { AdminUsersService } from './admin-users.service';
 import { AdminUsersController } from './admin-users.controller';
+import { UsersModule } from '../users/users.module';
 
 /**
  * B24 (A6) — admin de usuários/vagas.
@@ -18,6 +19,7 @@ import { AdminUsersController } from './admin-users.controller';
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key',
     }),
+    UsersModule,
   ],
   providers: [AdminUsersService],
   controllers: [AdminUsersController],
