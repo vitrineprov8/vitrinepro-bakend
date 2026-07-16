@@ -63,4 +63,6 @@ export const NOTIFICATION_DEFAULT_CHANNELS: Record<
   [NotificationType.PAYOUT_PAID]: { inApp: true, email: true },
   [NotificationType.PAYOUT_REJECTED]: { inApp: true, email: true },
   [NotificationType.PAYOUT_FAILED]: { inApp: true, email: true },
+  [NotificationType.INVOICE_CREATED]: { inApp: true, email: true },
+  [NotificationType.INVOICE_OVERDUE]: { inApp: true, email: true },
 };

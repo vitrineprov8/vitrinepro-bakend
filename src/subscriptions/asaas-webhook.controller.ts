@@ -1,6 +1,7 @@
 import { Body, Controller, Headers, HttpCode, Logger, Post } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { AsaasService } from '../payments/asaas.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 interface AsaasWebhookBody {
   event: string;
@@ -22,6 +23,7 @@ export class AsaasWebhookController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
     private readonly asaasService: AsaasService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   @Post()
@@ -43,7 +45,17 @@ export class AsaasWebhookController {
         await this.subscriptionsService.activateFromAsaasPaymentId(paymentId);
       } catch (err) {
         this.logger.error(
-          `Erro ao processar webhook ${body.event} (payment ${paymentId}): ${(err as Error).message}`,
+          `Erro ao processar webhook ${body.event} (payment ${paymentId}) em Subscriptions: ${(err as Error).message}`,
+        );
+      }
+      // Faturas de fee (T-E07) — mesmo evento/endpoint, payment pode ser de
+      // uma Invoice em vez de uma Subscription. activateFromAsaasPaymentId()
+      // é um no-op silencioso se não achar nenhuma invoice com esse id.
+      try {
+        await this.invoicesService.activateFromAsaasPaymentId(paymentId);
+      } catch (err) {
+        this.logger.error(
+          `Erro ao processar webhook ${body.event} (payment ${paymentId}) em Invoices: ${(err as Error).message}`,
         );
       }
     }

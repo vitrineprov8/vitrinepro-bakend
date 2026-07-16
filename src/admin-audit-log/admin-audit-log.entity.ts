@@ -42,6 +42,8 @@ export enum AdminAuditAction {
   // B25 — revisão/execução de pagamento da comissão do hunter
   PAYOUT_APPROVE = 'PAYOUT_APPROVE',
   PAYOUT_REJECT = 'PAYOUT_REJECT',
+  // Faturas de fee — resolução de disputa de fatura (T-E07)
+  INVOICE_RESOLVE_DISPUTE = 'INVOICE_RESOLVE_DISPUTE',
 }
 
 @Entity('admin_audit_logs')

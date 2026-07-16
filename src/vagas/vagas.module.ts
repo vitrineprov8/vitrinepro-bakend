@@ -13,6 +13,7 @@ import { AdminVagasController } from './admin-vagas.controller';
 import { VagaPublishLedgerModule } from '../vaga-publish-ledger/vaga-publish-ledger.module';
 import { TeamsModule } from '../teams/teams.module';
 import { SeoModule } from '../seo/seo.module';
+import { InvoicesModule } from '../invoices/invoices.module';
 
 @Module({
   imports: [
@@ -24,6 +25,8 @@ import { SeoModule } from '../seo/seo.module';
     // TeamContextHelper for resolving quota owner and team-wide listings.
     TeamsModule,
     SeoModule,
+    // Faturas de fee (T-E07) — bloqueio de publish por inadimplência.
+    InvoicesModule,
   ],
   providers: [VagasService],
   controllers: [VagasController, AdminVagasController],

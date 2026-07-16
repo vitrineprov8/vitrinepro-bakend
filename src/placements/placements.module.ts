@@ -9,18 +9,22 @@ import { MailModule } from '../mail/mail.module';
 import { PlacementsService } from './placements.service';
 import { PlacementsController } from './placements.controller';
 import { PayoutsModule } from '../payouts/payouts.module';
+import { InvoicesModule } from '../invoices/invoices.module';
 
 // B9 — Placements. TeamsModule para delegação (B15); MailModule para as
 // notificações transacionais do fluxo (hired/confirmed/disputed/etc).
 // B25 — PayoutsModule para criar o registro de pagamento assim que o fee
 // vira FEE_RELEASED (não o contrário: PayoutsModule NÃO importa
 // PlacementsModule, pra evitar ciclo).
+// Faturas de fee (T-E07) — mesmo princípio pra InvoicesModule: cria a
+// cobrança da empresa assim que o placement vira HIRED.
 @Module({
   imports: [
     TypeOrmModule.forFeature([Placement, VagaApplication, Vaga, User]),
     TeamsModule,
     MailModule,
     PayoutsModule,
+    InvoicesModule,
   ],
   providers: [PlacementsService],
   controllers: [PlacementsController],

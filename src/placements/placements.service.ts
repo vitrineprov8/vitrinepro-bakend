@@ -34,6 +34,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
 import { PayoutsService } from '../payouts/payouts.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -55,6 +56,7 @@ export class PlacementsService {
     private adminAuditLogService: AdminAuditLogService,
     private notificationsService: NotificationsService,
     private payoutsService: PayoutsService,
+    private invoicesService: InvoicesService,
   ) {}
 
   /**
@@ -72,6 +74,34 @@ export class PlacementsService {
         `Falha ao criar payout para o placement ${placement.id} (hunter ${hunter.id}): ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Faturas de fee (T-E07) — cria a cobrança da empresa assim que o
+   * placement é marcado HIRED. Mesmo tratamento fire-and-forget-com-log do
+   * `createPayoutSafely`: a transição de status do placement já foi salva e
+   * não deve ser desfeita se a fatura falhar, mas o erro precisa ficar
+   * visível pra reconciliação manual.
+   */
+  private async createInvoiceSafely(placement: Placement, companyId: string): Promise<void> {
+    try {
+      await this.invoicesService.createForPlacement(placement, companyId);
+    } catch (err) {
+      this.logger.error(
+        `Falha ao criar fatura para o placement ${placement.id} (empresa ${companyId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Fatura é cobrada do DONO DA QUOTA (mesmo id usado por
+   * `VagasService.publish()` pra checar inadimplência) — não
+   * necessariamente `vaga.createdById`, que pode ser um membro de time.
+   */
+  private async resolveInvoiceCompanyId(vagaCreatedById: string | null): Promise<string | null> {
+    if (!vagaCreatedById) return null;
+    const team = await this.teamContextHelper.getTeamForUser(vagaCreatedById);
+    return team ? team.ownerId : vagaCreatedById;
   }
 
   private async assertCanManageVaga(
@@ -220,6 +250,13 @@ export class PlacementsService {
           link: `/app/hunter/ganhos`,
           metadata: { placementId: saved.id, vagaId: application.vagaId },
         });
+      }
+    }
+
+    if (isHunterSourced && saved.feeAmount) {
+      const companyId = await this.resolveInvoiceCompanyId(application.vaga.createdById);
+      if (companyId) {
+        await this.createInvoiceSafely(saved, companyId);
       }
     }
 

@@ -30,6 +30,7 @@ import { UpdateVagaDto } from './dto/update-vaga.dto';
 import { ListVagasDto } from './dto/list-vagas.dto';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import { paginate, PaginatedResult } from '../common/paginate.helper';
+import { InvoicesService } from '../invoices/invoices.service';
 
 type VagaWithCount = Vaga & {
   applicationsCount: number;
@@ -62,6 +63,7 @@ export class VagasService {
     private seoService: SeoService,
     private mailService: MailService,
     private adminAuditLogService: AdminAuditLogService,
+    private invoicesService: InvoicesService,
   ) {}
 
   private async attachApplicationsCount(
@@ -672,6 +674,20 @@ export class VagasService {
           select: ['id', 'plan', 'planStatus', 'planExpiresAt', 'role'],
         });
         if (!freshOwner) throw new NotFoundException('Usuário não encontrado.');
+
+        // Inadimplência bloqueia publish (T-E07): fatura vencida há mais de
+        // 7 dias do dono da quota bloqueia novas publicações, até que a
+        // fatura seja paga (ou a disputa seja resolvida a favor da empresa).
+        const hasBlockingDelinquency = await this.invoicesService.hasBlockingDelinquency(
+          freshOwner.id,
+        );
+        if (hasBlockingDelinquency) {
+          throw new ForbiddenException({
+            code: 'INVOICE_OVERDUE_BLOCKED',
+            message:
+              'Pagamentos pendentes — novas publicações bloqueadas. Regularize suas faturas em atraso para continuar.',
+          });
+        }
 
         const now = new Date();
         const isSubscriptionActive =
