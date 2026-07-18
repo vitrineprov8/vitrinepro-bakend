@@ -2,6 +2,13 @@ import { Controller, Post, Body, UseGuards, Get, Request, HttpCode, HttpStatus, 
 import { Throttle } from '@nestjs/throttler';
 import type { Request as ExpressRequest, Response } from 'express';
 import { AuthService, DeviceInfo } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
+import {
+  EnableTwoFactorDto,
+  DisableTwoFactorDto,
+  RegenerateBackupCodesDto,
+  VerifyTwoFactorDto,
+} from './dto/two-factor.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GoogleAuthGuard } from './google-auth.guard';
 import { LinkedInAuthGuard } from './linkedin-auth.guard';
@@ -21,7 +28,10 @@ function deviceInfoFrom(req: ExpressRequest): DeviceInfo {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private twoFactorService: TwoFactorService,
+  ) {}
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
@@ -94,6 +104,68 @@ export class AuthController {
     @Body() dto: { currentPassword: string; newPassword: string },
   ) {
     return this.authService.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
+  }
+
+  // ===== B27 — 2FA (TOTP) =====
+  // Gratuito e disponível em todos os planos: segurança de conta não é
+  // recurso premium. Obrigatório para ADMIN (ver `TwoFactorService`).
+
+  @Get('2fa/status')
+  @UseGuards(JwtAuthGuard)
+  async twoFactorStatus(@Request() req) {
+    return this.twoFactorService.getStatus(req.user.id);
+  }
+
+  @Post('2fa/setup')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async twoFactorSetup(@Request() req) {
+    return this.twoFactorService.setup(req.user.id);
+  }
+
+  @Post('2fa/enable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async twoFactorEnable(@Request() req, @Body() dto: EnableTwoFactorDto) {
+    // `req.user.sessionId` vem do JwtStrategy (B26) — preserva a sessão atual
+    // ao revogar as demais.
+    return this.twoFactorService.enable(req.user.id, dto.code, req.user.sessionId);
+  }
+
+  @Post('2fa/disable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async twoFactorDisable(@Request() req, @Body() dto: DisableTwoFactorDto) {
+    return this.twoFactorService.disable(req.user.id, dto);
+  }
+
+  @Post('2fa/backup-codes')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async twoFactorBackupCodes(
+    @Request() req,
+    @Body() dto: RegenerateBackupCodesDto,
+  ) {
+    return this.twoFactorService.regenerateBackupCodes(req.user.id, dto.password);
+  }
+
+  /**
+   * Segunda etapa do login. Público (quem chama ainda não tem sessão), com o
+   * mesmo throttle estrito de `login` — é um alvo de força bruta: são só
+   * 1.000.000 de combinações de 6 dígitos.
+   */
+  @Post('2fa/verify')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(AUTH_THROTTLE)
+  async twoFactorVerify(
+    @Body() dto: VerifyTwoFactorDto,
+    @Req() req: ExpressRequest,
+  ) {
+    return this.twoFactorService.verifyLoginChallenge(
+      dto.challengeToken,
+      dto.code,
+      deviceInfoFrom(req),
+    );
   }
 
   @Get('profile')

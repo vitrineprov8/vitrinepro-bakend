@@ -150,6 +150,38 @@ export class User {
   @Column({ type: 'timestamp', nullable: true, select: false })
   emailVerificationExpiresAt: Date | null;
 
+  // ===== B27 — 2FA (TOTP) =====
+  // `twoFactorEnabled` NÃO é `select:false` de propósito: o fluxo de login
+  // precisa dele em toda busca por e-mail, e saber que a conta tem 2FA não é
+  // segredo. Já o segredo em si e os códigos de recuperação são `select:false`
+  // — só entram na query via `addSelect` explícito no fluxo de verificação
+  // (mesmo padrão de `password`/`passwordResetToken`).
+  @Column({ type: 'boolean', default: false })
+  twoFactorEnabled: boolean;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  twoFactorSecret: string | null;
+
+  /**
+   * Segredo gerado em `POST /auth/2fa/setup` mas ainda não confirmado. Só vira
+   * `twoFactorSecret` quando o usuário prova que o app está sincronizado
+   * digitando um código válido — evita trancar a conta com um segredo que o
+   * app nunca chegou a registrar.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  twoFactorPendingSecret: string | null;
+
+  /**
+   * Hashes bcrypt dos códigos de recuperação (nunca o código em claro — se o
+   * banco vazar, os códigos continuam inúteis). Cada uso remove o hash do
+   * array: código de recuperação é de uso único.
+   */
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  twoFactorBackupCodes: string[] | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  twoFactorEnabledAt: Date | null;
+
   @Column({ type: 'boolean', default: false })
   isCompany: boolean;
 

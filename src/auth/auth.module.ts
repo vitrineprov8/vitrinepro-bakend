@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { GoogleStrategy } from './google.strategy';
@@ -23,7 +24,13 @@ import { UserSession } from './user-session.entity';
       signOptions: { expiresIn: '24h' },
     }),
   ],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, LinkedInStrategy],
+  providers: [
+    AuthService,
+    TwoFactorService,
+    JwtStrategy,
+    GoogleStrategy,
+    LinkedInStrategy,
+  ],
   controllers: [AuthController],
 })
 export class AuthModule {}

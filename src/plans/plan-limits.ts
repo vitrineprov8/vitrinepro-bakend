@@ -40,12 +40,23 @@ export const PLAN_NAMES: Record<PlanTier, string> = {
   ENTERPRISE: 'Recruiter Enterprise',
 };
 
+/**
+ * B27 — segurança de conta **não** é recurso de plano pago. A verificação em
+ * duas etapas (2FA/TOTP) está disponível em todos os níveis, inclusive no
+ * Gratuito, e é obrigatória para contas ADMIN. Cobrar por ela desalinharia os
+ * incentivos: quanto mais contas protegidas, menor o risco de fraude na
+ * plataforma — inclusive nas contas que não pagam nada.
+ *
+ * O que pode virar recurso pago no futuro é a camada organizacional (exigir
+ * 2FA de todo o time, SSO/SAML, políticas de sessão), não o 2FA individual.
+ */
 export const PLAN_FEATURES: Record<PlanTier, string[]> = {
   FREE: [
     'Perfil público',
     'Dashboard básico',
     '1 vaga publicada por mês',
     '1 acesso',
+    'Verificação em duas etapas (2FA)',
   ],
   RECRUITER: [
     'Até 5 vagas publicadas por mês',

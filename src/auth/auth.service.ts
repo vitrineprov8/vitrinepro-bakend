@@ -12,9 +12,13 @@ import { UsersService } from '../users/users.service';
 import { TagsService } from '../tags/tags.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { User, UserPersona } from '../users/user.entity';
+import { User, UserPersona, UserRole } from '../users/user.entity';
 import { MailService } from '../mail/mail.service';
 import { UserSession } from './user-session.entity';
+import {
+  TWO_FACTOR_PENDING_CLAIM,
+  TWO_FACTOR_CHALLENGE_TTL,
+} from './two-factor.constants';
 
 /** Dados mínimos do dispositivo, extraídos da requisição pelo controller (B26 — sessões ativas). */
 export interface DeviceInfo {
@@ -141,6 +145,25 @@ export class AuthService {
       throw new UnauthorizedException('Email o contraseña incorrectos');
     }
 
+    // B27 — senha correta não basta quando o 2FA está ativo. Em vez do
+    // access_token, devolve um challenge token de vida curta que SÓ serve para
+    // `POST /auth/2fa/verify` (o `JwtStrategy` rejeita tokens com a marca
+    // `twoFactorPending`, então ele não abre nenhuma rota autenticada).
+    if (user.twoFactorEnabled) {
+      return {
+        message: 'Digite o código do seu app autenticador.',
+        twoFactorRequired: true as const,
+        challengeToken: this.jwtService.sign(
+          {
+            sub: user.id,
+            email: user.email,
+            [TWO_FACTOR_PENDING_CLAIM]: true,
+          },
+          { expiresIn: TWO_FACTOR_CHALLENGE_TTL },
+        ),
+      };
+    }
+
     const token = await this.createSession(user, device);
 
     return {
@@ -153,6 +176,12 @@ export class AuthService {
         lastName: user.lastName,
         personas: user.personas,
       },
+      // B27 — ADMIN é obrigado a ter 2FA. Não bloqueamos o login (seria um
+      // deadlock: não dá pra ativar sem entrar), mas sinalizamos pro front
+      // empurrar a tela de ativação.
+      ...(user.role === UserRole.ADMIN && !user.twoFactorEnabled
+        ? { twoFactorSetupRequired: true as const }
+        : {}),
     };
   }
 
